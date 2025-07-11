@@ -1,4 +1,3 @@
-// src/app/api/auth/magic-link/generate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { API_CONFIG } from "@/src/config/api.config";
 
@@ -23,13 +22,16 @@ export async function POST(req: NextRequest) {
 
     console.log('🔗 Frontend API: Generating magic link for:', email);
 
-    // Appel vers le backend via KrakenD
-    const response = await fetch(`${API_CONFIG.BASE_URL}/graphql`, {
+    // ✅ CORRECTION: Appel vers l'endpoint GraphQL PUBLIC pour Magic Link
+    const graphqlEndpoint = `${API_CONFIG.BASE_URL}/graphql-public`;
+    
+    const response = await fetch(graphqlEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Request-ID': generateRequestId(),
         'X-Trace-ID': generateTraceId(),
+        // ✅ Ne pas envoyer de token Authorization pour GraphQL public
       },
       body: JSON.stringify({
         query: `
@@ -56,13 +58,20 @@ export async function POST(req: NextRequest) {
       }),
     });
 
+    console.log('🔍 Response status:', response.status);
+    console.log('🔍 Response headers:', [...response.headers.entries()]);
+
     if (!response.ok) {
-      throw new Error(`Backend error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('❌ Backend error response:', errorText);
+      throw new Error(`Backend error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('✅ Backend response:', data);
     
     if (data.errors) {
+      console.error('❌ GraphQL errors:', data.errors);
       throw new Error(data.errors[0].message || 'GraphQL error');
     }
 
