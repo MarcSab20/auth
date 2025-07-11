@@ -2,133 +2,84 @@
 
 import { useState } from "react";
 import { Button } from "@/src/components/landing-page/Button";
+import { useMagicLink } from "@/context/magicLinkContext";
+import { maskEmail, storeMagicLinkData } from "@/src/utils/magicLink";
 
 interface MagicLinkRequestProps {
   onSuccess?: (email: string) => void;
   onError?: (error: string) => void;
   className?: string;
+  defaultEmail?: string;
+  defaultAction?: 'login' | 'register' | 'reset_password' | 'verify_email';
 }
 
 export default function MagicLinkRequest({ 
   onSuccess, 
   onError, 
-  className = "" 
+  className = "",
+  defaultEmail = "",
+  defaultAction = 'login'
 }: MagicLinkRequestProps) {
-  const [email, setEmail] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [message, setMessage] = useState("");
+  const { generateMagicLink, state } = useMagicLink();
+  const [email, setEmail] = useState(defaultEmail);
+  const [action, setAction] = useState(defaultAction);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email.trim()) {
-      setStatus('error');
-      setMessage("Veuillez saisir votre adresse email.");
-      onError?.("Email requis");
+      onError?.("Veuillez saisir votre adresse email.");
       return;
     }
 
     // Validation basique de l'email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      setStatus('error');
-      setMessage("Veuillez saisir une adresse email valide.");
-      onError?.("Format email invalide");
+      onError?.("Veuillez saisir une adresse email valide.");
       return;
     }
-
-    setIsLoading(true);
-    setStatus('idle');
-    setMessage("");
 
     try {
       console.log('🔗 Demande de Magic Link pour:', email);
       
-      // Appel vers votre API GraphQL pour générer un Magic Link
-      const response = await fetch('http://localhost:3001/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: `
-            mutation GenerateMagicLink($input: MagicLinkGenerationInputDto!) {
-              generateMagicLink(input: $input) {
-                success
-                linkId
-                message
-                expiresAt
-                emailSent
-              }
-            }
-          `,
-          variables: {
-            input: {
-              email: email.trim(),
-              action: 'login',
-              context: {
-                ip: '',
-                userAgent: navigator.userAgent,
-                deviceFingerprint: '',
-                referrer: window.location.href
-              }
-            }
-          }
-        }),
+      const result = await generateMagicLink({
+        email: email.trim(),
+        action,
+        redirectUrl: '/account',
+        userAgent: navigator.userAgent,
+        referrer: window.location.href
       });
 
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.errors) {
-        throw new Error(data.errors[0].message || 'Erreur GraphQL');
-      }
-
-      const result = data.data?.generateMagicLink;
-      
-      if (!result) {
-        throw new Error('Réponse invalide du serveur');
-      }
-
-      if (result.success && result.emailSent) {
-        setStatus('success');
-        setMessage(result.message || 'Magic Link envoyé avec succès !');
-        onSuccess?.(email);
+      if (result.success) {
+        // Stocker les données pour référence
+        storeMagicLinkData({
+          email: email.trim(),
+          action,
+          linkId: state.lastGeneratedLink?.linkId,
+          expiresAt: state.lastGeneratedLink?.expiresAt
+        });
+        
+        onSuccess?.(email.trim());
         console.log('✅ Magic Link envoyé:', result);
       } else {
-        setStatus('error');
-        setMessage(result.message || 'Échec de l\'envoi du Magic Link');
-        onError?.(result.message || 'Échec de l\'envoi');
+        onError?.(result.error || 'Échec de l\'envoi');
       }
       
     } catch (error: any) {
       console.error('❌ Erreur lors de la demande de Magic Link:', error);
-      setStatus('error');
-      setMessage('Erreur de connexion au serveur. Veuillez réessayer.');
-      onError?.(error.message || 'Erreur réseau');
-    } finally {
-      setIsLoading(false);
+      onError?.(error.message || 'Erreur de connexion au serveur');
     }
   };
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
-    
-    if (status !== 'idle') {
-      setStatus('idle');
-      setMessage("");
-    }
   };
 
-  const canSubmit = email.trim().length > 0 && !isLoading;
+  const canSubmit = email.trim().length > 0 && !state.isLoading;
 
   return (
     <div className={`max-w-sm mx-auto ${className}`}>
-      {status === 'success' ? (
+      {state.success && state.lastGeneratedLink ? (
         <div className="space-y-6">
           <div className="text-center">
             <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
@@ -141,7 +92,7 @@ export default function MagicLinkRequest({
               Magic Link envoyé !
             </h3>
             <p className="text-sm text-gray-600">
-              {message}
+              {state.success}
             </p>
           </div>
 
@@ -155,8 +106,13 @@ export default function MagicLinkRequest({
                   Vérifiez votre boîte email
                 </p>
                 <p className="text-xs text-blue-700 mt-1">
-                  Un email contenant votre Magic Link a été envoyé à <strong>{email}</strong>
+                  Un email contenant votre Magic Link a été envoyé à <strong>{maskEmail(email)}</strong>
                 </p>
+                {state.lastGeneratedLink.expiresAt && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Expire dans 30 minutes
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -168,10 +124,7 @@ export default function MagicLinkRequest({
             <div className="space-y-2">
               <button
                 type="button"
-                onClick={() => {
-                  setStatus('idle');
-                  setMessage("");
-                }}
+                onClick={() => window.location.reload()}
                 className="text-blue-500 underline text-sm hover:no-underline"
               >
                 Renvoyer le Magic Link
@@ -182,7 +135,7 @@ export default function MagicLinkRequest({
             </div>
           </div>
         </div>
-      ) : (
+             ) : (
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
@@ -199,20 +152,41 @@ export default function MagicLinkRequest({
                 placeholder="votre@email.com"
                 value={email}
                 onChange={(e) => handleEmailChange(e.target.value)}
-                disabled={isLoading}
+                disabled={state.isLoading}
                 autoComplete="email"
                 required
               />
             </div>
+
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-gray-700"
+                htmlFor="magic-link-action"
+              >
+                Action
+              </label>
+              <select
+                id="magic-link-action"
+                className="form-select w-full py-2"
+                value={action}
+                onChange={(e) => setAction(e.target.value as any)}
+                disabled={state.isLoading}
+              >
+                <option value="login">Connexion</option>
+                <option value="register">Inscription</option>
+                <option value="reset_password">Reset mot de passe</option>
+                <option value="verify_email">Vérifier email</option>
+              </select>
+            </div>
           </div>
 
-          {status === 'error' && message && (
+          {state.error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
               <div className="flex items-center">
                 <svg className="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                 </svg>
-                <p className="text-red-700 text-sm">{message}</p>
+                <p className="text-red-700 text-sm">{state.error}</p>
               </div>
             </div>
           )}
@@ -223,7 +197,7 @@ export default function MagicLinkRequest({
               className="w-full"
               disabled={!canSubmit}
             >
-              {isLoading ? (
+              {state.isLoading ? (
                 <span className="flex items-center justify-center">
                   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

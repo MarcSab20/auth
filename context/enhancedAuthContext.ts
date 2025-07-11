@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import authAPI from '@/src/services/api/authAPI';
 import { User, AuthState, LoginRequest, AuthError } from '@/types/auth';
+import magicLinkAPI from '@/src/services/api/magicLinkAPI';
 
 interface AuthContextType {
   state: AuthState;
@@ -279,6 +280,59 @@ export function EnhancedAuthProvider({ children }: { children: React.ReactNode }
     return false;
   }, []);
 
+  const loginWithMagicLink = useCallback(async (token: string) => {
+      dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_ERROR', payload: null });
+  
+      try {
+        const result = await magicLinkAPI.verifyMagicLink({ token });
+        
+        if (result.success) {
+          if (result.accessToken) {
+            dispatch({
+              type: 'SET_TOKENS',
+              payload: {
+                token: result.accessToken,
+                refreshToken: result.refreshToken,
+              }
+            });
+          }
+  
+          if (result.user) {
+            dispatch({ type: 'SET_USER', payload: result.user });
+          }
+          
+          dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
+          return { success: true };
+        } else {
+          const errorMessage = result.message || 'Échec de la connexion Magic Link';
+          dispatch({ type: 'SET_ERROR', payload: errorMessage });
+          return { success: false, error: errorMessage };
+        }
+      } catch (error: any) {
+        const errorMessage = error.message || 'Erreur de connexion Magic Link';
+        dispatch({ type: 'SET_ERROR', payload: errorMessage });
+        return { success: false, error: errorMessage };
+      } finally {
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
+    }, []);
+  
+    const requestMagicLink = useCallback(async (email: string, action?: 'login' | 'register') => {
+      try {
+        const result = await magicLinkAPI.generateMagicLink({ 
+          email, 
+          action: action || 'login' 
+        });
+        return result;
+      } catch (error: any) {
+        return { 
+          success: false, 
+          error: error.message || 'Erreur lors de la demande de Magic Link' 
+        };
+      }
+    }, []);
+
   const publicState: AuthState = {
     user: state.user,
     isAuthenticated: state.isAuthenticated,
@@ -297,6 +351,8 @@ export function EnhancedAuthProvider({ children }: { children: React.ReactNode }
     validateSession,
     clearError,
     isTokenExpiringSoon,
+    loginWithMagicLink,
+    requestMagicLink,
   };
 
   return React.createElement(

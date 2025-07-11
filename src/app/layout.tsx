@@ -4,6 +4,7 @@ import { EnhancedAuthProvider } from "@/context/enhancedAuthContext";
 import { EnhancedSignupProvider } from "@/context/enhancedSignupContext";
 import { WaitingListSignupProvider } from "@/context/waitingListSignupContext";
 import { SignupInvitationProvider } from "@/context/signupInvitationContext";
+import { MagicLinkProvider } from "@/context/magicLinkContext"; 
 import type { Metadata } from 'next'
 import type React from 'react'
 
@@ -33,15 +34,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="bg-white font-chillax text-zinc-950 antialiased lg:bg-white dark:bg-zinc-900 dark:text-white">
         <EnhancedAuthProvider>
-          <EnhancedSignupProvider>
-            <SignupInvitationProvider>
-              <WaitingListSignupProvider>
-                <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
-                  {children}
-                </div>
-              </WaitingListSignupProvider>
-            </SignupInvitationProvider>
-          </EnhancedSignupProvider>
+          <MagicLinkProvider> {/* NOUVEAU PROVIDER */}
+            <EnhancedSignupProvider>
+              <SignupInvitationProvider>
+                <WaitingListSignupProvider>
+                  <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
+                    {children}
+                  </div>
+                </WaitingListSignupProvider>
+              </SignupInvitationProvider>
+            </EnhancedSignupProvider>
+          </MagicLinkProvider>
         </EnhancedAuthProvider>
       </body>
     </html>
