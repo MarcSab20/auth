@@ -14,6 +14,8 @@ interface AuthContextType {
   validateSession: () => Promise<boolean>;
   clearError: () => void;
   isTokenExpiringSoon: () => boolean;
+  loginWithMagicLink: (token: string) => Promise<{ success: boolean; error?: string }>;
+  requestMagicLink: (email: string, action?: 'login' | 'register') => Promise<{ success: boolean; error?: string }>;
 }
 
 type AuthAction =
