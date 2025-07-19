@@ -1,3 +1,4 @@
+// auth/src/components/auth/magic-link/magicLinkRequest.tsx
 "use client";
 
 import { useState } from "react";
@@ -12,6 +13,20 @@ interface MagicLinkRequestProps {
   defaultEmail?: string;
   defaultAction?: 'login' | 'register' | 'reset_password' | 'verify_email';
 }
+
+const ACTION_LABELS = {
+  'login': '🔑 Connexion',
+  'register': '✨ Inscription',
+  'reset_password': '🔄 Reset mot de passe',
+  'verify_email': '✅ Vérifier email'
+};
+
+const ACTION_DESCRIPTIONS = {
+  'login': 'Se connecter avec un compte existant',
+  'register': 'Créer un nouveau compte automatiquement',
+  'reset_password': 'Réinitialiser votre mot de passe',
+  'verify_email': 'Vérifier votre adresse email'
+};
 
 export default function MagicLinkRequest({ 
   onSuccess, 
@@ -40,7 +55,7 @@ export default function MagicLinkRequest({
     }
 
     try {
-      console.log('🔗 Demande de Magic Link pour:', email);
+      console.log('🔗 Demande de Magic Link pour:', email, 'Action:', action);
       
       const result = await generateMagicLink({
         email: email.trim(),
@@ -103,10 +118,10 @@ export default function MagicLinkRequest({
               </svg>
               <div className="text-left">
                 <p className="text-sm font-medium text-blue-900">
-                  Vérifiez votre boîte email
+                  Action: {ACTION_LABELS[action]}
                 </p>
                 <p className="text-xs text-blue-700 mt-1">
-                  Un email contenant votre Magic Link a été envoyé à <strong>{maskEmail(email)}</strong>
+                  Email envoyé à <strong>{maskEmail(email)}</strong>
                 </p>
                 {state.lastGeneratedLink.expiresAt && (
                   <p className="text-xs text-blue-600 mt-1">
@@ -135,7 +150,7 @@ export default function MagicLinkRequest({
             </div>
           </div>
         </div>
-             ) : (
+      ) : (
         <form onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
@@ -163,7 +178,7 @@ export default function MagicLinkRequest({
                 className="mb-1 block text-sm font-medium text-gray-700"
                 htmlFor="magic-link-action"
               >
-                Action
+                Action souhaitée
               </label>
               <select
                 id="magic-link-action"
@@ -172,11 +187,15 @@ export default function MagicLinkRequest({
                 onChange={(e) => setAction(e.target.value as any)}
                 disabled={state.isLoading}
               >
-                <option value="login">Connexion</option>
-                <option value="register">Inscription</option>
-                <option value="reset_password">Reset mot de passe</option>
-                <option value="verify_email">Vérifier email</option>
+                {Object.entries(ACTION_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {ACTION_DESCRIPTIONS[action]}
+              </p>
             </div>
           </div>
 
@@ -226,6 +245,7 @@ export default function MagicLinkRequest({
               </h4>
               <ul className="text-xs text-gray-600 space-y-1">
                 <li>• Connexion sécurisée sans mot de passe</li>
+                <li>• Création de compte automatique si nécessaire</li>
                 <li>• Lien à usage unique valide 30 minutes</li>
                 <li>• Envoyé directement dans votre boîte email</li>
               </ul>

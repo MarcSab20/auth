@@ -17,10 +17,9 @@ export default function SignInForm() {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'password' | 'magic-link'>('password');
   const [magicLinkEnabled, setMagicLinkEnabled] = useState(false);
-
+    const [magicLinkAction, setMagicLinkAction] = useState<'login' | 'register'>('login');
   const initialMessage = searchParams.get("message");
 
-  // Vérifier si Magic Link est activé
   useEffect(() => {
     const checkMagicLinkAvailability = async () => {
       try {
@@ -94,7 +93,6 @@ export default function SignInForm() {
     const result = await requestMagicLink(username.trim(), 'login');
     
     if (result.success) {
-      // Afficher un message de succès ou rediriger vers une page de confirmation
       console.log('Magic Link envoyé avec succès');
     }
   };
@@ -276,6 +274,27 @@ export default function SignInForm() {
                   {validationErrors.username && (
                     <p className="text-red-500 text-sm mt-1">{validationErrors.username}</p>
                   )}
+                </div>
+                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="magic-action">
+                    Action souhaitée
+                  </label>
+                  <select
+                    id="magic-action"
+                    className="form-select w-full py-2"
+                    value={magicLinkAction}
+                    onChange={(e) => setMagicLinkAction(e.target.value as 'login' | 'register')}
+                    disabled={isLoading}
+                  >
+                    <option value="login">Connexion </option>
+                    <option value="register">Inscription </option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {magicLinkAction === 'login' 
+                      ? 'Se connecter avec un compte existant'
+                      : 'Créer un nouveau compte automatiquement'
+                    }
+                  </p>
                 </div>
               </div>
 
