@@ -10,8 +10,8 @@ const storage = new Persistence('localStorage');
 const smpClient = new SMPClient({
   appId: process.env.NEXT_PUBLIC_APP_ID || '',
   appSecret: process.env.NEXT_PUBLIC_APP_SECRET || '',
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
-  graphqlUrl: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
+  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8090',
+  graphqlUrl: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:8090/graphql',
   defaultLanguage: 'fr_FR',
   appAccessDuration: 30*60*1000,
   userAccessDuration: 30*60*1000,
