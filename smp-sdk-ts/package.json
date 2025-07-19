@@ -1,0 +1,58 @@
+{
+  "name": "smp-sdk-ts",
+  "version": "1.0.0",
+  "description": "A TypeScript SDK for SMP platform with OAuth2 and user authentication.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "jest",
+    "start": "npm run build ; node  --trace-deprecation dist/index.js ",
+    "prepare": "tsc --outDir ./dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sylorion/smp-ts-sdk.git"
+  },
+  "keywords": [
+    "SDK",
+    "SMP",
+    "JS",
+    "Kit"
+  ],
+  "author": "Services SAS",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sylorion/smp-sdk-ts/issues"
+  },
+  "homepage": "https://github.com/sylorion/smp-sdk-ts#readme",
+  "devDependencies": {
+    "@apollo/client": "^3.8.10",
+    "@graphql-codegen/typescript-graphql-request": "^6.2.0",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "axios": "^1.7.5",
+    "eslint": "^8.0.0",
+    "graphql": "^16.8.1",
+    "graphql-tag": "^2.12.6",
+    "intl-messageformat": "^10.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.8.10",
+    "@graphql-codegen/typescript-graphql-request": "^6.2.0",
+    "axios": "^1.7.5",
+    "intl-messageformat": "^10.5.14",
+    "graphql": "^16.8.1",
+    "graphql-tag": "^2.12.6"
+  }
+}

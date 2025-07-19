@@ -1,0 +1,203 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+
+/* Additional styles */
+@import "additional-styles/utility-patterns.css";
+@import "additional-styles/theme.css";
+
+@import "tailwindcss/utilities";
+
+/* Désactivation des flèches natives des select */
+[data-slot="control"] select {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+}
+
+/* Pour IE/Edge */
+[data-slot="control"] select::-ms-expand {
+  display: none;
+}
+
+/* Police Chillax */
+@font-face {
+  font-family: "Chillax";
+  src: url("/fonts/Chillax/Chillax-Extralight.woff2") format("woff2"),
+       url("/fonts/Chillax/Chillax-Extralight.woff") format("woff");
+  font-weight: 200;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Chillax";
+  src: url("/fonts/Chillax/Chillax-Light.woff2") format("woff2"),
+       url("/fonts/Chillax/Chillax-Light.woff") format("woff");
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Chillax";
+  src: url("/fonts/Chillax/Chillax-Regular.woff2") format("woff2"),
+       url("/fonts/Chillax/Chillax-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Chillax";
+  src: url("/fonts/Chillax/Chillax-Medium.woff2") format("woff2"),
+       url("/fonts/Chillax/Chillax-Medium.woff") format("woff");
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Chillax";
+  src: url("/fonts/Chillax/Chillax-Semibold.woff2") format("woff2"),
+       url("/fonts/Chillax/Chillax-Semibold.woff") format("woff");
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Chillax";
+  src: url("/fonts/Chillax/Chillax-Bold.woff2") format("woff2"),
+       url("/fonts/Chillax/Chillax-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+}
+
+/* Configuration de base */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 346.8 77.2% 49.8%;
+    --primary-foreground: 355.7 100% 97.3%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 346.8 77.2% 49.8%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 20 14.3% 4.1%;
+    --foreground: 0 0% 95%;
+    --card: 24 9.8% 10%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 346.8 77.2% 49.8%;
+    --primary-foreground: 355.7 100% 97.3%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 12 6.5% 15.1%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 85.7% 97.3%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 346.8 77.2% 49.8%;
+  }
+
+  body {
+    font-family: "Chillax", sans-serif;
+  }
+}
+
+/* Styles des icônes */
+[data-slot="icon"] {
+  @apply size-5 shrink-0 fill-zinc-500 transition-colors duration-200;
+}
+
+/* Correction globale pour TOUTES les icônes Heroicons - solution exhaustive */
+svg[class*="24/outline"] {
+  @apply fill-none !important;
+  background: transparent !important;
+  fill: none !important;
+}
+
+/* Correction explicite avec une règle très prioritaire */
+svg[stroke="currentColor"][stroke-width="1.5"] {
+  @apply fill-none !important;
+  background: transparent !important;
+}
+
+/* Correction spécifique pour les composants Heroicons qui contiennent "Icon" dans leur nom de classe */
+*[class*="Icon"] > svg {
+  @apply fill-none !important;
+  background: transparent !important;
+}
+
+/* Styles spécifiques à la sidebar */
+nav[data-sidebar] [data-slot="icon"] {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+}
+
+@media (min-width: 640px) {
+  nav[data-sidebar] [data-slot="icon"] {
+    @apply size-5;
+  }
+}
+
+/* États des icônes dans la sidebar */
+[data-hover="true"] [data-slot="icon"] {
+  @apply fill-zinc-900 dark:fill-white;
+}
+
+[data-active="true"] [data-slot="icon"] {
+  @apply fill-zinc-900 dark:fill-white;
+}
+
+[data-current="true"] [data-slot="icon"] {
+  @apply fill-zinc-900 dark:fill-white;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Utilitaires */
+.rotate-container {
+  position: relative;
+  display: inline-block;
+}
+
+.icon-default {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* MARKDOWN */
+
+@layer base {
+  body {
+    @apply font-chillax;
+  }
+}
+
+
+
