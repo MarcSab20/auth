@@ -13,10 +13,10 @@ const smpClient = new SMPClient({
   apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
   graphqlUrl: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
   defaultLanguage: 'fr_FR',
-  appAccessDuration: 30,
-  userAccessDuration: 30,
-  minUserAccessDuration: 30,
-  minAppAccessDuration: 30,
+  appAccessDuration: 30*60*1000,
+  userAccessDuration: 30*60*1000,
+  minUserAccessDuration: 30*60*1000,
+  minAppAccessDuration: 30*60*1000,
   persistence: 'localStorage', 
   storage: storage, 
 });
@@ -149,8 +149,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             const user = JSON.parse(storedUser);
             
-            // Valider le token avec la SDK (si cette fonctionnalité existe)
-            // Pour l'instant, on fait confiance au token stocké
             dispatch({ 
               type: 'SET_TOKENS', 
               payload: { 
@@ -190,10 +188,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      const response = await smpClient.authenticateUser(credentials.username, credentials.password);
-      console.log('📝 [SDK] Authentication response received:', response);
-      
-      if (!response || !response.user) {
+      await smpClient.authenticateApp();
+      const result = await smpClient.authenticateUser(credentials.username, credentials.password);
+      console.log('📝 [SDK] Authentication response received:', result);
+
+      if (!result || !result.user) {
         throw new Error('No user data received from authentication');
       }
 
@@ -217,27 +216,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Créer l'objet utilisateur compatible
         const user = {
-          userID: response.user.userID,
-          username: response.user.username,
-          email: response.user.email,
-          profileID: response.user.profileID,
+          userID: result.user.userID,
+          username: result.user.username,
+          email: result.user.email,
+          profileID: result.user.profileID,
           accessibleOrganizations: [],
           organizations: [],
-          sub: response.user.userID,
+          sub: result.user.userID,
           roles: [],
         };
 
         dispatch({ type: 'SET_USER', payload: user });
         
-        // Sauvegarder dans localStorage et cookie
         const cookieString = JSON.stringify(user);
         localStorage.setItem("smp_user_0", cookieString);
         
-        const cookieValue = encodeURIComponent(cookieString);
         const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-        document.cookie = `smp_user_0=${cookieValue}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
-        
+        document.cookie = `smp_user_0=${encodeURIComponent(cookieString)}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
+
         console.log('✅ [SDK] Login completed successfully');
+        console.log('🍪 Cookie set:', document.cookie.includes('smp_user_0'));
+        
         dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
         
         return { success: true };
@@ -247,13 +246,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
     } catch (error: any) {
       console.error('❌ [SDK] Login error:', error);
-      const errorMessage = error.message || 'Erreur de connexion';
-      dispatch({ type: 'SET_ERROR', payload: errorMessage });
-      return { success: false, error: errorMessage };
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
+      let errorMessage = 'Erreur de connexion';
+    
+    if (error.message) {
+      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+        errorMessage = 'Identifiants incorrects';
+      } else if (error.message.includes('Network') || error.message.includes('ENOTFOUND')) {
+        errorMessage = 'Erreur de connexion au serveur';
+      } else if (error.message.includes('APP_AUTH_FAILED')) {
+        errorMessage = 'Erreur d\'authentification de l\'application';
+      } else {
+        errorMessage = error.message;
+      }
     }
-  }, []);
+    
+    dispatch({ type: 'SET_ERROR', payload: errorMessage });
+    return { success: false, error: errorMessage };
+  } finally {
+    dispatch({ type: 'SET_LOADING', payload: false });
+  }
+}, []);
 
   // Déconnexion avec la SDK
   const logout = useCallback(async () => {

@@ -11,7 +11,6 @@ export default function SignInForm() {
   const { state, login, clearError, requestMagicLink } = useAuth();
   const { state: magicLinkState, isEnabled: isMagicLinkEnabled } = useMagicLink();
   const searchParams = useSearchParams();
-  
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
