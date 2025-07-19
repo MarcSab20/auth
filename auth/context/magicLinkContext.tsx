@@ -1,11 +1,33 @@
-// src/context/magicLinkContext.tsx
 'use client';
 
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import magicLinkAPI, { 
+import { SMPClient } from 'smp-sdk-ts';
+import type { 
   MagicLinkGenerateRequest, 
-  MagicLinkVerifyRequest 
-} from '@/src/services/api/magicLinkAPI';
+  MagicLinkVerifyRequest,
+  MagicLinkGenerateResponse,
+  MagicLinkVerifyResponse,
+  MagicLinkStatusResponse
+} from 'smp-sdk-ts';
+
+// Configuration SDK
+const smpClient = new SMPClient({
+  appId: process.env.NEXT_PUBLIC_APP_ID || '',
+  appSecret: process.env.NEXT_PUBLIC_APP_SECRET || '',
+  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
+  graphqlUrl: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
+  defaultLanguage: 'fr_FR',
+  appAccessDuration: 30,
+  userAccessDuration: 30,
+  minUserAccessDuration: 30,
+  minAppAccessDuration: 30,
+  persistence: {
+    kind: 'localStorage',
+    set: (key: string, value: string) => localStorage.setItem(key, value),
+    get: (key: string) => localStorage.getItem(key),
+    remove: (key: string) => localStorage.removeItem(key),
+  },
+});
 
 interface MagicLinkContextType {
   state: MagicLinkState;
@@ -15,6 +37,7 @@ interface MagicLinkContextType {
   revokeMagicLink: (linkId: string) => Promise<void>;
   clearError: () => void;
   clearSuccess: () => void;
+  isEnabled: () => Promise<boolean>;
 }
 
 interface MagicLinkState {
@@ -31,6 +54,8 @@ interface MagicLinkState {
     status?: string;
     requiresMFA?: boolean;
     user?: any;
+    accessToken?: string;
+    refreshToken?: string;
   } | null;
   linkStatus: Array<{
     id: string;
@@ -93,15 +118,29 @@ const MagicLinkContext = createContext<MagicLinkContextType | undefined>(undefin
 export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(magicLinkReducer, initialState);
 
+  // Générer un Magic Link
   const generateMagicLink = useCallback(async (request: MagicLinkGenerateRequest) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      const result = await magicLinkAPI.generateMagicLink(request);
+      // Initialiser la SDK si nécessaire
+      await smpClient.authenticateApp();
+
+      console.log('🔗 [SDK] Generating Magic Link for:', request.email);
+
+      // Ajouter le contexte de la requête
+      const enrichedRequest = {
+        ...request,
+        ip: request.ip || (typeof window !== 'undefined' ? '' : ''),
+        userAgent: request.userAgent || (typeof window !== 'undefined' ? navigator.userAgent : ''),
+        referrer: request.referrer || (typeof window !== 'undefined' ? window.location.href : ''),
+      };
+
+      const result = await smpClient.magicLink.generate(enrichedRequest);
       
       if (result.success) {
-                  dispatch({
+        dispatch({
           type: 'SET_GENERATED_LINK',
           payload: {
             linkId: result.linkId,
@@ -116,24 +155,29 @@ export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
           payload: result.message || 'Magic Link généré avec succès' 
         });
         
+        console.log('✅ [SDK] Magic Link generated successfully');
         return { success: true };
       } else {
         dispatch({ type: 'SET_ERROR', payload: result.message || 'Échec de la génération' });
         return { success: false, error: result.message };
       }
     } catch (error: any) {
+      console.error('❌ [SDK] Magic Link generation failed:', error);
       const errorMessage = error.message || 'Erreur lors de la génération du Magic Link';
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
       return { success: false, error: errorMessage };
     }
   }, []);
 
+  // Vérifier un Magic Link
   const verifyMagicLink = useCallback(async (request: MagicLinkVerifyRequest) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
 
     try {
-      const result = await magicLinkAPI.verifyMagicLink(request);
+      console.log('🔗 [SDK] Verifying Magic Link token:', request.token.substring(0, 8) + '...');
+
+      const result = await smpClient.magicLink.verify(request);
       
       if (result.success) {
         dispatch({
@@ -142,6 +186,8 @@ export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
             status: result.status,
             requiresMFA: result.requiresMFA,
             user: result.user,
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
           }
         });
         
@@ -149,7 +195,36 @@ export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
           type: 'SET_SUCCESS', 
           payload: result.message || 'Magic Link vérifié avec succès' 
         });
+
+        // Stocker les tokens si fournis
+        if (result.accessToken) {
+          localStorage.setItem('access_token', result.accessToken);
+          
+          if (result.refreshToken) {
+            localStorage.setItem('refresh_token', result.refreshToken);
+          }
+
+          // Créer le cookie utilisateur si on a les données utilisateur
+          if (result.user) {
+            const userCookie = {
+              userID: result.user.sub || result.user.userID,
+              username: result.user.preferred_username || result.user.username,
+              email: result.user.email,
+              profileID: result.user.profileID || result.user.sub,
+              accessibleOrganizations: result.user.organization_ids || []
+            };
+
+            const cookieString = JSON.stringify(userCookie);
+            localStorage.setItem("smp_user_0", cookieString);
+            
+            // Créer le cookie HTTP
+            const cookieValue = encodeURIComponent(cookieString);
+            const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+            document.cookie = `smp_user_0=${cookieValue}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
+          }
+        }
         
+        console.log('✅ [SDK] Magic Link verified successfully');
         return { 
           success: true, 
           data: {
@@ -166,33 +241,37 @@ export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: result.message };
       }
     } catch (error: any) {
+      console.error('❌ [SDK] Magic Link verification failed:', error);
       const errorMessage = error.message || 'Erreur lors de la vérification du Magic Link';
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
       return { success: false, error: errorMessage };
     }
   }, []);
 
+  // Obtenir le statut des Magic Links
   const getMagicLinkStatus = useCallback(async (email: string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
 
     try {
-      const result = await magicLinkAPI.getMagicLinkStatus(email);
+      const result = await smpClient.magicLink.getStatus(email);
       
       if (result.success && result.data) {
         dispatch({ type: 'SET_LINK_STATUS', payload: result.data.links });
       }
     } catch (error: any) {
+      console.error('❌ [SDK] Magic Link status failed:', error);
       dispatch({ type: 'SET_ERROR', payload: error.message });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, []);
 
+  // Révoquer un Magic Link
   const revokeMagicLink = useCallback(async (linkId: string) => {
     dispatch({ type: 'SET_LOADING', payload: true });
 
     try {
-      const result = await magicLinkAPI.revokeMagicLink(linkId);
+      const result = await smpClient.magicLink.revoke(linkId);
       
       if (result.success) {
         dispatch({ type: 'SET_SUCCESS', payload: result.message });
@@ -205,11 +284,22 @@ export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'SET_ERROR', payload: 'Échec de la révocation' });
       }
     } catch (error: any) {
+      console.error('❌ [SDK] Magic Link revoke failed:', error);
       dispatch({ type: 'SET_ERROR', payload: error.message });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, [state.linkStatus]);
+
+  // Vérifier si Magic Link est activé
+  const isEnabled = useCallback(async (): Promise<boolean> => {
+    try {
+      return await smpClient.magicLink.isEnabled();
+    } catch (error) {
+      console.warn('Could not check Magic Link status, assuming enabled');
+      return true;
+    }
+  }, []);
 
   const clearError = useCallback(() => {
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -227,6 +317,7 @@ export function MagicLinkProvider({ children }: { children: React.ReactNode }) {
     revokeMagicLink,
     clearError,
     clearSuccess,
+    isEnabled,
   };
 
   return React.createElement(
@@ -271,4 +362,3 @@ export function useMagicLinkAuth() {
     clearError,
   };
 }
-

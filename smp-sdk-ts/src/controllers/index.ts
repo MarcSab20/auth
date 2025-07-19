@@ -18,3 +18,9 @@ export {Mailing} from './MailingController';
 export {Media} from './MediaController';
 export { Order } from './OrderController';
 export { WaitingList } from './WaitingListController';
+export { MagicLink, 
+  MagicLinkGenerateRequest, 
+  MagicLinkVerifyRequest,
+  MagicLinkGenerateResponse,
+  MagicLinkVerifyResponse,
+  MagicLinkStatusResponse } from './MagicLinkController';
