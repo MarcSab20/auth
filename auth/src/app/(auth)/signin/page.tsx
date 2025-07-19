@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import SignInFormWithMagicLink from "@/src/components/signin/signinFormWithMagicLink";
+import SignInForm from "@/src/components/signin/singinForm";
 
 export const metadata = {
   title: "Connexion à Services",
@@ -30,7 +30,7 @@ export default async function SignInPage() {
 
   return (
     <div className="container mx-auto px-4">
-      <SignInFormWithMagicLink />
+      <SignInForm />
     </div>
   );
 }

@@ -1,16 +1,29 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import { SMPClient } from 'smp-sdk-ts';
+import { SMPClient, Persistence } from 'smp-sdk-ts';
 import type { 
-  MagicLinkGenerateRequest, 
-  MagicLinkVerifyRequest,
-  MagicLinkGenerateResponse,
-  MagicLinkVerifyResponse,
-  MagicLinkStatusResponse
+//  MagicLinkGenerateRequest,
+//  MagicLinkVerifyRequest
 } from 'smp-sdk-ts';
 
-// Configuration SDK
+export interface MagicLinkGenerateRequest {
+  email: string;
+  action?: 'login' | 'register' | 'reset_password' | 'verify_email';
+  redirectUrl?: string;
+  ip?: string;
+  userAgent?: string;
+  deviceFingerprint?: string;
+  referrer?: string;
+}
+
+
+export interface MagicLinkVerifyRequest {
+  token: string;
+}
+
+const storage = new Persistence('localStorage');
+
 const smpClient = new SMPClient({
   appId: process.env.NEXT_PUBLIC_APP_ID || '',
   appSecret: process.env.NEXT_PUBLIC_APP_SECRET || '',
@@ -21,12 +34,8 @@ const smpClient = new SMPClient({
   userAccessDuration: 30,
   minUserAccessDuration: 30,
   minAppAccessDuration: 30,
-  persistence: {
-    kind: 'localStorage',
-    set: (key: string, value: string) => localStorage.setItem(key, value),
-    get: (key: string) => localStorage.getItem(key),
-    remove: (key: string) => localStorage.removeItem(key),
-  },
+  persistence: 'localStorage', 
+  storage: storage, 
 });
 
 interface MagicLinkContextType {

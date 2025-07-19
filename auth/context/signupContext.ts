@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
-import { SMPClient } from 'smp-sdk-ts';
+import { SMPClient, Persistence } from 'smp-sdk-ts';
 import { 
   SignupRequest, 
   SignupResponse 
@@ -10,10 +10,14 @@ import {
   ValidationState, 
   PasswordPolicy, 
   RegistrationStatus,
-  ValidationSummary 
+  ValidationSummary, 
+  EmailValidationResult,
+  UsernameValidationResult,
+  PasswordValidationResult
 } from '@/types/validation';
 
-// Configuration SDK
+const storage = new Persistence('localStorage');
+
 const smpClient = new SMPClient({
   appId: process.env.NEXT_PUBLIC_APP_ID || '',
   appSecret: process.env.NEXT_PUBLIC_APP_SECRET || '',
@@ -24,12 +28,8 @@ const smpClient = new SMPClient({
   userAccessDuration: 30,
   minUserAccessDuration: 30,
   minAppAccessDuration: 30,
-  persistence: {
-    kind: 'localStorage',
-    set: (key: string, value: string) => localStorage.setItem(key, value),
-    get: (key: string) => localStorage.getItem(key),
-    remove: (key: string) => localStorage.removeItem(key),
-  },
+  persistence: 'localStorage', 
+  storage: storage, 
 });
 
 interface SignupContextType {
@@ -342,81 +342,80 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
   // Validation de champs individuels
   const validateField = useCallback(async (field: string, value: string) => {
-    if (!value.trim()) {
-      const emptyValidation: ValidationState = {
-        isValid: false,
-        isValidating: false,
-        errors: [],
-        suggestions: []
-      };
-      
-      dispatch({
-        type: 'SET_FIELD_VALIDATION',
-        payload: { field, validation: emptyValidation }
-      });
-      return;
+  if (!value.trim()) {
+    const emptyValidation: ValidationState = {
+      isValid: false,
+      isValidating: false,
+      errors: [],
+      suggestions: []
+    };
+    
+    dispatch({
+      type: 'SET_FIELD_VALIDATION',
+      payload: { field, validation: emptyValidation }
+    });
+    return;
+  }
+
+  const validatingState: ValidationState = {
+    isValid: false,
+    isValidating: true,
+    errors: [],
+    suggestions: []
+  };
+
+  dispatch({
+    type: 'SET_FIELD_VALIDATION',
+    payload: { field, validation: validatingState }
+  });
+
+  try {
+    let result;
+    
+    switch (field) {
+      case 'username':
+        result = await validateUsername(value);
+        break;
+      case 'email':
+        result = await validateEmail(value);
+        break;
+      case 'password':
+        result = await validatePassword(value);
+        break;
+      default:
+        throw new Error(`Unknown field: ${field}`);
     }
 
-    const validatingState: ValidationState = {
+      const validation: ValidationState = {
+      isValid: result.valid,
+      isValidating: false,
+      errors: result.errors || [],
+      suggestions: result.suggestions || [],
+      lastValidated: new Date().toISOString(),
+      score: 'score' in result ? result.score : undefined
+    };
+
+    dispatch({
+      type: 'SET_FIELD_VALIDATION',
+      payload: { field, validation }
+    });
+  } catch (error: any) {
+    const errorValidation: ValidationState = {
       isValid: false,
-      isValidating: true,
-      errors: [],
+      isValidating: false,
+      errors: [error.message || 'Erreur de validation'],
       suggestions: []
     };
 
     dispatch({
       type: 'SET_FIELD_VALIDATION',
-      payload: { field, validation: validatingState }
+      payload: { field, validation: errorValidation }
     });
-
-    try {
-      let result;
-      
-      switch (field) {
-        case 'username':
-          result = await validateUsername(value);
-          break;
-        case 'email':
-          result = await validateEmail(value);
-          break;
-        case 'password':
-          result = await validatePassword(value);
-          break;
-        default:
-          throw new Error(`Unknown field: ${field}`);
-      }
-
-      dispatch({
-        type: 'SET_FIELD_VALIDATION',
-        payload: {
-          field,
-          validation: {
-            isValid: result.valid,
-            isValidating: false,
-            errors: result.errors || [],
-            suggestions: result.suggestions || [],
-            lastValidated: new Date().toISOString(),
-            score: result.score
-          }
-        }
-      });
-    } catch (error: any) {
-      const errorValidation: ValidationState = {
-        isValid: false,
-        isValidating: false,
-        errors: [error.message || 'Erreur de validation'],
-        suggestions: []
-      };
-
-      dispatch({
-        type: 'SET_FIELD_VALIDATION',
-        payload: { field, validation: errorValidation }
-      });
-    }
-  }, []);
+  }
+}, []);
 
   // Fonctions de validation individuelles
-  const validateUsername = async (username: string) => {
+  const validateUsername = async (username: string): Promise<UsernameValidationResult> => {
     const errors: string[] = [];
     const suggestions: string[] = [];
 
@@ -446,8 +445,9 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
-  const validateEmail = async (email: string) => {
+  const validateEmail = async (email: string): Promise<EmailValidationResult> => {
     const errors: string[] = [];
+    const suggestions: string[] = [];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email)) {
@@ -457,11 +457,13 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     return {
       valid: errors.length === 0,
       available: errors.length === 0,
-      errors
+      deliverable: errors.length === 0,
+      errors,
+      suggestions
     };
   };
 
-  const validatePassword = async (password: string) => {
+  const validatePassword = async (password: string): Promise<PasswordValidationResult> => {
     const errors: string[] = [];
     const suggestions: string[] = [];
     let score = 0;

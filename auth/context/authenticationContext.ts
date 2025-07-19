@@ -1,10 +1,12 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
-import { SMPClient } from 'smp-sdk-ts';
+import { SMPClient, Persistence } from 'smp-sdk-ts';
 import { User, AuthState, LoginRequest, AuthError } from '@/types/auth';
 
-// Configuration SDK
+
+const storage = new Persistence('localStorage');
+
 const smpClient = new SMPClient({
   appId: process.env.NEXT_PUBLIC_APP_ID || '',
   appSecret: process.env.NEXT_PUBLIC_APP_SECRET || '',
@@ -15,12 +17,8 @@ const smpClient = new SMPClient({
   userAccessDuration: 30,
   minUserAccessDuration: 30,
   minAppAccessDuration: 30,
-  persistence: {
-    kind: 'localStorage',
-    set: (key: string, value: string) => localStorage.setItem(key, value),
-    get: (key: string) => localStorage.getItem(key),
-    remove: (key: string) => localStorage.removeItem(key),
-  },
+  persistence: 'localStorage', 
+  storage: storage, 
 });
 
 interface AuthContextType {
@@ -224,6 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: response.user.email,
           profileID: response.user.profileID,
           accessibleOrganizations: [],
+          organizations: [],
           sub: response.user.userID,
           roles: [],
         };

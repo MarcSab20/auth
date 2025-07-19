@@ -5,6 +5,12 @@ export interface ValidationRequest {
   field: string;
 }
 
+export interface BaseValidationResult {
+  valid: boolean;
+  errors: string[];
+  suggestions: string[];
+}
+
 export interface ValidationResponse {
   valid: boolean;
   available?: boolean;
@@ -32,25 +38,17 @@ export interface PasswordPolicy {
   forbiddenPatterns: string[];
 }
 
-export interface PasswordValidationResult {
-  valid: boolean;
-  errors: string[];
+export interface PasswordValidationResult extends BaseValidationResult{
   score: number;
-  suggestions: string[];
 }
 
-export interface UsernameValidationResult {
-  valid: boolean;
+export interface UsernameValidationResult extends BaseValidationResult {
   available: boolean;
-  errors: string[];
-  suggestions: string[];
 }
 
-export interface EmailValidationResult {
-  valid: boolean;
+export interface EmailValidationResult extends BaseValidationResult {
   available: boolean;
   deliverable: boolean;
-  errors: string[];
 }
 
 export interface UsernameSuggestion {
@@ -81,3 +79,5 @@ export interface ValidationError extends Error {
   code: string;
   suggestions?: string[];
 }
+
+export type ValidationResult = PasswordValidationResult | UsernameValidationResult | EmailValidationResult;

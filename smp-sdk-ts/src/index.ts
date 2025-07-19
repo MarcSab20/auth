@@ -26,8 +26,15 @@ export type {
   SignatureType
 } from './types/Contract';
 
-// Export controllers
+export {
+  MagicLinkGenerateRequest,
+  MagicLinkVerifyRequest,
+  MagicLinkGenerateResponse,
+  MagicLinkVerifyResponse,
+  MagicLinkStatusResponse
+} from './controllers/MagicLinkController';
 export * from './controllers';
+export { MagicLink } from './controllers/MagicLinkController';
 
 export { SMPClient, APIClient, serviceQueries, statusByServices } ;
 export { Persistence, defaultLanguage, logger };

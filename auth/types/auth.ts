@@ -46,7 +46,7 @@ export interface TokenRefreshResponse {
 
 // Utilisateur
 export interface User {
-  organizations: string[] | undefined;
+  organizations?: string[]; 
   accessibleOrganizations: any;
   profileID: string;
   username: string | undefined;
