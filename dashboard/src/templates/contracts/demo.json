@@ -1,0 +1,570 @@
+{
+  "id": "demo",
+  "title": "Contrat de Prestation de Services - DEMO",
+  "version": "1.0",
+  "sections": [
+    {
+      "id": "cover",
+      "title": "Page de Couverture",
+      "level": 0,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": { "level": 1 },
+            "content": [
+              { "type": "text", "text": "CONTRAT DE PRESTATION DE SERVICES" }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "CONFIDENTIALITÉ : C2 – CONFIDENTIALITÉ NOMINALE" }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "DIFFUSION : D2 – DIFFUSION RESTREINTE" }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "RÉFÉRENCE : " },
+              { "type": "text", "text": "{{contract_ref}}", "marks": [{ "type": "variableMark", "attrs": { "key": "contract_ref" } }] }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "DATE : " },
+              { "type": "text", "text": "{{contract_date}}", "marks": [{ "type": "variableMark", "attrs": { "key": "contract_date" } }] }
+            ]
+          }
+        ]
+      },
+      "children": []
+    },
+    {
+      "id": "parties",
+      "title": "1. PARTIES AU CONTRAT",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "ENTRE LES SOUSSIGNÉS :" }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Le Prestataire : " },
+              { "type": "text", "text": "{{provider_name}}", "marks": [{ "type": "variableMark", "attrs": { "key": "provider_name" } }] },
+              { "type": "text", "text": ", au capital de " },
+              { "type": "text", "text": "{{provider_capital}}", "marks": [{ "type": "variableMark", "attrs": { "key": "provider_capital" } }] },
+              { "type": "text", "text": " €, immatriculée au RCS de " },
+              { "type": "text", "text": "{{provider_rcs_city}}", "marks": [{ "type": "variableMark", "attrs": { "key": "provider_rcs_city" } }] },
+              { "type": "text", "text": " sous le numéro " },
+              { "type": "text", "text": "{{provider_rcs_number}}", "marks": [{ "type": "variableMark", "attrs": { "key": "provider_rcs_number" } }] }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "ET" }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Le Client : " },
+              { "type": "text", "text": "{{client_name}}", "marks": [{ "type": "variableMark", "attrs": { "key": "client_name" } }] },
+              { "type": "text", "text": ", au capital de " },
+              { "type": "text", "text": "{{client_capital}}", "marks": [{ "type": "variableMark", "attrs": { "key": "client_capital" } }] },
+              { "type": "text", "text": " €, immatriculée au RCS de " },
+              { "type": "text", "text": "{{client_rcs_city}}", "marks": [{ "type": "variableMark", "attrs": { "key": "client_rcs_city" } }] }
+            ]
+          }
+        ]
+      },
+      "children": []
+    },
+    {
+      "id": "definitions",
+      "title": "2. DÉFINITIONS",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Dans le cadre du présent contrat, les termes suivants auront la signification qui leur est donnée ci-après :" }
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "id": "def_prestations",
+          "title": "2.1 Prestations",
+          "level": 2,
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "« Prestations » : ensemble des services de conseil, d'audit, de conception, d'accompagnement et de formation en transformation digitale définis à l'article 4." }
+                ]
+              }
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "def_livrables",
+          "title": "2.2 Livrables",
+          "level": 2,
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "« Livrables » : documents, rapports, spécifications, formations, outils et recommandations remis au Client." }
+                ]
+              }
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "def_confidentielles",
+          "title": "2.3 Données Confidentielles",
+          "level": 2,
+          "content": "**« Données Confidentielles »** : toute information de nature technique, commerciale, financière, stratégique ou autre, sous quelque forme que ce soit (écrite, orale, électronique), communiquée par l'une des Parties à l'autre dans le cadre du présent contrat.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "objet",
+      "title": "3. OBJET DU CONTRAT",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Le présent Contrat a pour objet de définir les conditions dans lesquelles le Prestataire s'engage à exécuter les Prestations de " },
+              { "type": "text", "text": "{{services_description}}", "marks": [{ "type": "variableMark", "attrs": { "key": "services_description" } }] }
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "id": "prestations_detaillees",
+          "title": "3.1 DESCRIPTIF DES PRESTATIONS",
+          "level": 2,
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "Le Prestataire s'engage à fournir des services de conseil en transformation digitale comprenant quatre phases distinctes :" }
+                ]
+              }
+            ]
+          },
+          "children": [
+            {
+              "id": "phase_audit",
+              "title": "3.1.1 Phase 1 : Audit et Diagnostic",
+              "level": 3,
+              "content": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      { "type": "text", "text": "Durée : " },
+                      { "type": "text", "text": "{{audit_duration}}", "marks": [{ "type": "variableMark", "attrs": { "key": "audit_duration" } }] }
+                    ]
+                  },
+                  {
+                    "type": "bulletList",
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Analyse approfondie des processus métier existants" }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Évaluation de l'architecture technique actuelle" }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Identification des points de friction et opportunités d'amélioration" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "id": "audit_processus",
+                  "title": "3.1.1.1 Audit des Processus Métier",
+                  "level": 4,
+                  "content": {
+                    "type": "doc",
+                    "content": [
+                      {
+                        "type": "bulletList",
+                        "content": [
+                          {
+                            "type": "listItem",
+                            "content": [
+                              {
+                                "type": "paragraph",
+                                "content": [
+                                  { "type": "text", "text": "Cartographie des processus actuels" }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "listItem",
+                            "content": [
+                              {
+                                "type": "paragraph",
+                                "content": [
+                                  { "type": "text", "text": "Identification des dysfonctionnements" }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "listItem",
+                            "content": [
+                              {
+                                "type": "paragraph",
+                                "content": [
+                                  { "type": "text", "text": "Mesure des performances existantes" }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "children": []
+                },
+                {
+                  "id": "audit_technique",
+                  "title": "3.1.1.2 Audit Technique",
+                  "level": 4,
+                  "content": "- Évaluation de l'infrastructure IT\n- Analyse de la sécurité\n- Revue des applications existantes\n- Évaluation de la scalabilité",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "phase_conception",
+              "title": "3.1.2 Phase 2 : Conception de la Solution",
+              "level": 3,
+              "content": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      { "type": "text", "text": "Durée : " },
+                      { "type": "text", "text": "{{conception_duration}}", "marks": [{ "type": "variableMark", "attrs": { "key": "conception_duration" } }] }
+                    ]
+                  },
+                  {
+                    "type": "bulletList",
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Définition de l'architecture cible" }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Spécifications fonctionnelles et techniques détaillées" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "id": "architecture_cible",
+                  "title": "3.1.2.1 Architecture Cible",
+                  "level": 4,
+                  "content": "- Définition de l'architecture applicative\n- Modélisation des données\n- Spécifications d'intégration\n- Standards et bonnes pratiques",
+                  "children": []
+                },
+                {
+                  "id": "plan_migration",
+                  "title": "3.1.2.2 Plan de Migration",
+                  "level": 4,
+                  "content": "- Stratégie de migration des données\n- Planning détaillé du déploiement\n- Gestion des risques\n- Plan de rollback",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "modalites_execution",
+          "title": "3.2 MODALITÉS D'EXÉCUTION",
+          "level": 2,
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "Les prestations seront réalisées selon une approche agile avec les modalités suivantes :" },
+                  { "type": "text", "text": "{{execution_modalities}}", "marks": [{ "type": "variableMark", "attrs": { "key": "execution_modalities" } }] }
+                ]
+              }
+            ]
+          },
+          "children": [
+            {
+              "id": "organisation_projet",
+              "title": "3.2.1 Organisation du Projet",
+              "level": 3,
+              "content": {
+                "type": "doc",
+                "content": [
+                  {
+                    "type": "bulletList",
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Durée totale : " },
+                              { "type": "text", "text": "{{contract_duration}}", "marks": [{ "type": "variableMark", "attrs": { "key": "contract_duration" } }] }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "content": [
+                              { "type": "text", "text": "Équipe dédiée : " },
+                              { "type": "text", "text": "{{team_composition}}", "marks": [{ "type": "variableMark", "attrs": { "key": "team_composition" } }] }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "children": []
+            },
+            {
+              "id": "rythme_travail",
+              "title": "3.2.2 Rythme de Travail",
+              "level": 3,
+              "content": "- 3 jours par semaine en moyenne sur site client\n- 2 jours par semaine en télétravail pour la production de livrables\n- Points d'étape hebdomadaires avec le comité de pilotage\n- Revues mensuelles avec la direction générale",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duree",
+      "title": "4. DURÉE ET CONDITIONS",
+      "level": 1,
+      "content": "Le présent Contrat prend effet le 01/02/2024 pour se terminer le 31/07/2024.",
+      "children": [
+        {
+          "id": "duree_initiale",
+          "title": "4.1 Durée Initiale",
+          "level": 2,
+          "content": "La durée initiale du contrat est fixée à 6 mois, du 1er février 2024 au 31 juillet 2024.",
+          "children": []
+        },
+        {
+          "id": "conditions_resiliation",
+          "title": "4.2 Conditions de Résiliation",
+          "level": 2,
+          "content": "Les Parties conviennent expressément que le présent Contrat pourra être rompu, sans motif, durant les vingt (20) premiers jours à compter de la date d'effet.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "prix_facturation",
+      "title": "5. PRIX ET FACTURATION",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Le prix total des prestations est fixé à " },
+              { "type": "text", "text": "{{contract_amount}}", "marks": [{ "type": "variableMark", "attrs": { "key": "contract_amount" } }] },
+              { "type": "text", "text": " euros HT." }
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "id": "tarification",
+          "title": "5.1 Tarification",
+          "level": 2,
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "Le tarif journalier est fixé à " },
+                  { "type": "text", "text": "{{daily_rate}}", "marks": [{ "type": "variableMark", "attrs": { "key": "daily_rate" } }] },
+                  { "type": "text", "text": " € HT par journée de prestation." }
+                ]
+              }
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "modalites_paiement",
+          "title": "5.2 Modalités de Paiement",
+          "level": 2,
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "Paiement par virement bancaire sur le compte IBAN : " },
+                  { "type": "text", "text": "{{iban}}", "marks": [{ "type": "variableMark", "attrs": { "key": "iban" } }] },
+                  { "type": "text", "text": ", SWIFT : " },
+                  { "type": "text", "text": "{{swift}}", "marks": [{ "type": "variableMark", "attrs": { "key": "swift" } }] }
+                ]
+              }
+            ]
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "signatures",
+      "title": "6. SIGNATURES",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Fait à " },
+              { "type": "text", "text": "{{contract_location}}", "marks": [{ "type": "variableMark", "attrs": { "key": "contract_location" } }] },
+              { "type": "text", "text": ", le " },
+              { "type": "text", "text": "{{contract_date}}", "marks": [{ "type": "variableMark", "attrs": { "key": "contract_date" } }] }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Signature du Prestataire : " },
+              { "type": "text", "text": "{{provider_name}}", "marks": [{ "type": "variableMark", "attrs": { "key": "provider_name" } }] }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Signature du Client : " },
+              { "type": "text", "text": "{{client_name}}", "marks": [{ "type": "variableMark", "attrs": { "key": "client_name" } }] }
+            ]
+          }
+        ]
+      },
+      "children": []
+    }
+  ],
+  "variables": {
+    "contract_ref": "DEMO-2024-001",
+    "contract_date": "15/01/2024",
+    "provider_name": "Sylorion",
+    "provider_capital": "10000",
+    "provider_rcs_city": "Paris",
+    "provider_rcs_number": "123456789",
+    "client_name": "Client Demo",
+    "client_capital": "50000",
+    "client_rcs_city": "Paris",
+    "services_description": "transformation digitale",
+    "audit_duration": "2 mois",
+    "conception_duration": "1 mois",
+    "execution_modalities": "approche agile avec points d'étape hebdomadaires",
+    "contract_duration": "6 mois",
+    "team_composition": "1 Chef de projet senior + 2 Consultants experts",
+    "contract_amount": "96000",
+    "daily_rate": "800",
+    "iban": "FR76 1234 5678 9012 3456 7890 123",
+    "swift": "ABCDEFGH",
+    "contract_location": "Paris"
+  }
+} 

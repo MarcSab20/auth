@@ -1,0 +1,119 @@
+{
+  "title": "Contrat de Consulting",
+  "version": "1.0",
+  "type": "consulting",
+  "sections": [
+    {
+      "id": "section_1",
+      "title": "1. Objet du contrat",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Le présent contrat a pour objet la réalisation de prestations de consulting par "
+              },
+              {
+                "type": "text",
+                "text": "{{provider_name}}",
+                "marks": [{ "type": "variableMark", "attrs": { "key": "provider_name" } }]
+              },
+              {
+                "type": "text",
+                "text": " au profit de "
+              },
+              {
+                "type": "text",
+                "text": "{{client_name}}",
+                "marks": [{ "type": "variableMark", "attrs": { "key": "client_name" } }]
+              },
+              {
+                "type": "text",
+                "text": "."
+              }
+            ]
+          }
+        ]
+      },
+      "children": []
+    },
+    {
+      "id": "section_2",
+      "title": "2. Durée du contrat",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Le présent contrat est conclu pour une durée de "
+              },
+              {
+                "type": "text",
+                "text": "{{contract_duration}}",
+                "marks": [{ "type": "variableMark", "attrs": { "key": "contract_duration" } }]
+              },
+              {
+                "type": "text",
+                "text": " à compter du "
+              },
+              {
+                "type": "text",
+                "text": "{{contract_date}}",
+                "marks": [{ "type": "variableMark", "attrs": { "key": "contract_date" } }]
+              },
+              {
+                "type": "text",
+                "text": "."
+              }
+            ]
+          }
+        ]
+      },
+      "children": []
+    },
+    {
+      "id": "section_3",
+      "title": "3. Prix et conditions de paiement",
+      "level": 1,
+      "content": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Le prix des prestations s'élève à "
+              },
+              {
+                "type": "text",
+                "text": "{{contract_amount}}",
+                "marks": [{ "type": "variableMark", "attrs": { "key": "contract_amount" } }]
+              },
+              {
+                "type": "text",
+                "text": " euros hors taxes."
+              }
+            ]
+          }
+        ]
+      },
+      "children": []
+    }
+  ],
+  "variables": {
+    "provider_name": "Sylorion",
+    "client_name": "[Nom du client]",
+    "contract_date": "[Date du contrat]",
+    "contract_duration": "[Durée du contrat]",
+    "contract_amount": "[Montant du contrat]"
+  }
+} 

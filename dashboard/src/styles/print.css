@@ -1,0 +1,282 @@
+/* Styles d'impression pour les contrats */
+@media print {
+  /* Configuration de page A4 */
+  @page {
+    size: A4;
+    margin: 20mm;
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Masquer les éléments d'interface */
+  button, 
+  .no-print,
+  .toolbar,
+  .sidebar,
+  .variable-drawer,
+  .top-bar {
+    display: none !important;
+  }
+
+  /* Configuration générale */
+  * {
+    background: transparent !important;
+    color: black !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body {
+    font-family: 'Times New Roman', serif !important;
+    font-size: 12pt !important;
+    line-height: 1.4 !important;
+    background: white !important;
+  }
+
+  /* Titres et sections */
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid;
+    page-break-after: avoid;
+    font-weight: bold;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+  }
+
+  h1 {
+    font-size: 18pt;
+    text-align: center;
+    margin-bottom: 2em;
+  }
+
+  h2 {
+    font-size: 14pt;
+    margin-top: 1.5em;
+  }
+
+  h3 {
+    font-size: 12pt;
+    margin-top: 1em;
+  }
+
+  /* Paragraphes */
+  p {
+    text-align: justify;
+    text-indent: 0;
+    margin-bottom: 1em;
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Listes */
+  ul, ol {
+    break-inside: avoid;
+    margin-bottom: 1em;
+  }
+
+  li {
+    break-inside: avoid;
+    margin-bottom: 0.5em;
+  }
+
+  /* Tableaux */
+  table {
+    break-inside: avoid;
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+  }
+
+  th, td {
+    border: 1px solid black;
+    padding: 8pt;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold;
+  }
+
+  /* Éviter les coupures de page inappropriées */
+  .no-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 1em;
+  }
+
+  .signature-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-top: 2em;
+    padding-top: 1em;
+    border-top: 1px solid black;
+  }
+
+  /* Variables mises en évidence */
+  .variable-mark {
+    font-weight: bold;
+    background: none !important;
+    border: none !important;
+    text-decoration: underline;
+  }
+
+  /* Page breaks forcés */
+  .page-break {
+    page-break-before: always;
+  }
+
+  .page-break-after {
+    page-break-after: always;
+  }
+
+  /* En-têtes et pieds de page */
+  .header, .footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    font-size: 10pt;
+    text-align: center;
+    color: #666;
+  }
+
+  .header {
+    top: 0;
+  }
+
+  .footer {
+    bottom: 0;
+  }
+
+  /* Liens */
+  a {
+    color: black !important;
+    text-decoration: underline;
+  }
+
+  /* Citations et blocs de code */
+  blockquote {
+    border-left: 3px solid black;
+    padding-left: 1em;
+    margin-left: 0;
+    font-style: italic;
+  }
+
+  code {
+    font-family: 'Courier New', monospace;
+    background: #f5f5f5 !important;
+    padding: 2px 4px;
+    border-radius: 0;
+  }
+
+  /* Images */
+  img {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+  }
+
+  /* Marges spéciales pour certains éléments */
+  .contract-header {
+    text-align: center;
+    margin-bottom: 3em;
+  }
+
+  .contract-parties {
+    margin: 2em 0;
+  }
+
+  .contract-article {
+    margin: 1.5em 0;
+  }
+
+  .contract-signatures {
+    margin-top: 3em;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature-left, .signature-right {
+    width: 45%;
+    text-align: center;
+    border-top: 1px solid black;
+    padding-top: 0.5em;
+    margin-top: 2em;
+  }
+}
+
+/* Styles spécifiques pour l'aperçu à l'écran */
+@media screen {
+  .print-preview {
+    background: #f5f5f5;
+    padding: 2cm;
+  }
+
+  .print-preview .page {
+    background: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2cm;
+    min-height: 297mm;
+    width: 210mm;
+    padding: 20mm;
+  }
+
+  .variable-mark {
+    background-color: #dbeafe;
+    border: 1px solid #3b82f6;
+    border-radius: 4px;
+    padding: 2px 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .variable-mark:hover {
+    background-color: #bfdbfe;
+  }
+}
+
+/* Styles pour Paged.js */
+.pagedjs_page {
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.pagedjs_page .pagedjs_margin {
+  background: transparent;
+}
+
+.pagedjs_page .pagedjs_margin-top {
+  text-align: center;
+  font-size: 10pt;
+  color: #666;
+}
+
+.pagedjs_page .pagedjs_margin-bottom {
+  text-align: center;
+  font-size: 10pt;
+  color: #666;
+}
+
+/* Classes utilitaires pour le contenu */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-left { text-align: left; }
+.text-justify { text-align: justify; }
+
+.font-bold { font-weight: bold; }
+.font-italic { font-style: italic; }
+.font-underline { text-decoration: underline; }
+
+.mb-1 { margin-bottom: 0.5em; }
+.mb-2 { margin-bottom: 1em; }
+.mb-3 { margin-bottom: 1.5em; }
+.mb-4 { margin-bottom: 2em; }
+
+.mt-1 { margin-top: 0.5em; }
+.mt-2 { margin-top: 1em; }
+.mt-3 { margin-top: 1.5em; }
+.mt-4 { margin-top: 2em; } 

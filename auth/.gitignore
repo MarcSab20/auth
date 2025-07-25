@@ -1,0 +1,7 @@
+node_modules/
+.env*
+*.pem
+*.key
+public
+package-lock.json
+.next
