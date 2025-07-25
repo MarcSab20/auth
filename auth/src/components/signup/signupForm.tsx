@@ -1,8 +1,8 @@
-// src/components/signup/signupForm.tsx - VERSION CORRIGÉE
+// src/components/signup/signupForm.tsx 
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSignup } from "@/context/signupContext"; // UTILISER LE CONTEXTE EXISTANT
+import { useSignup } from "@/context/signupContext"; 
 import { useRouter } from "next/navigation";
 
 interface FormData {
@@ -14,7 +14,7 @@ interface FormData {
 }
 
 export default function SignUpForm() {
-  const { signup, error, success, loading } = useSignup(); // CONTEXTE SIMPLE
+  const { signup, error, success, loading } = useSignup(); 
   const router = useRouter();
   const [step, setStep] = useState<number>(1);
   const [formData, setFormData] = useState<FormData>({
