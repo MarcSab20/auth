@@ -1,0 +1,135 @@
+// src/graphql/index.js
+import {
+  loadFiles,
+  AuditnLogActionType,
+  EstimateStage,
+  FollowableEntity,
+  MediaType,
+  NotificationFrequencyPref,
+  ObjectStatus,
+  OrganizationEconomicSizeKind,
+  PaymentMethodType,
+  PaymentStatus,
+  PlaceKind,
+  ProfileGender,
+  ServiceBillingPlan,
+  ServicesAcceptedDevice,
+  ServiceSupplyForm,
+  ServiceUptakeType,
+  CriteriaTargetedEntity,
+  UserType,
+  Service,
+  ServiceAttribute,
+  Application,
+  Asset,
+  AuditLog,
+  BaseType,
+  Comment,
+  Criteria,
+  Estimate,
+  EstimateAsset,
+  Discount,
+  Documentation,
+  FaqAnswer,
+  FaqQuestion,
+  FaqService,
+  FilterInput,
+  Follow,
+  SMPContext,
+  Industry,
+  Invoice,
+  Media,
+  Place,
+  MutationError,
+  Organization,
+  OrganizationMedia,
+  PaginationInput,
+  SortInput,
+  PaymentConfig,
+  PaymentMethod,
+  Profile,
+  Review,
+  Role,
+  User,
+  UserOrganization,
+  UserPreferences,
+  UserRole,
+} from "smp-gql-schema";
+// const { types, resolvers } = loadGraphQLComponents()
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+// import { default as Place } from './types/Place.gql.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+import { loadFilesSync } from "@graphql-tools/load-files";
+import { mergeTypeDefs } from "@graphql-tools/merge";
+// const typesArray = loadFilesSync(path.join(__dirname, './types'), { extensions: ['graphql.js'] });
+const resolvers = await loadFiles(
+  join(__dirname, "./resolvers"),
+  "Resolver.js"
+);
+import { default as GWContext } from "./types/GWContext.gql.js";
+const typesArray = [
+  AuditnLogActionType,
+  EstimateStage,
+  FollowableEntity,
+  MediaType,
+  NotificationFrequencyPref,
+  ObjectStatus,
+  OrganizationEconomicSizeKind,
+  PaymentMethodType,
+  PaymentStatus,
+  PlaceKind,
+  ProfileGender,
+  ServiceBillingPlan,
+  ServicesAcceptedDevice,
+  ServiceSupplyForm,
+  ServiceUptakeType,
+  CriteriaTargetedEntity,
+  UserType,
+  Service,
+  ServiceAttribute,
+  Application,
+  Asset,
+  AuditLog,
+  BaseType,
+  Comment,
+  Criteria,
+  Estimate,
+  EstimateAsset,
+  Discount,
+  Documentation,
+  FaqAnswer,
+  FaqQuestion,
+  FaqService,
+  FilterInput,
+  Follow,
+  SMPContext,
+  GWContext,
+  Industry,
+  Invoice,
+  Media,
+  Place,
+  MutationError,
+  Organization,
+  OrganizationMedia,
+  PaginationInput,
+  SortInput,
+  PaymentConfig,
+  PaymentMethod,
+  Profile,
+  Review,
+  Role,
+  User,
+  UserOrganization,
+  UserPreferences,
+  UserRole,
+];
+
+// // Build the typeDefs from files defined types
+const typeDefs = mergeTypeDefs(typesArray);
+
+export { typeDefs, resolvers };

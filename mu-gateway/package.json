@@ -1,0 +1,59 @@
+{
+  "name": "mu-gateway",
+  "version": "1.0.0",
+  "description": "passerelle d'entrée pour l'ensemble de l'infrastructure de microservices après le proxy inverse et l'équilibreur de charge",
+  "main": "gateway.mjs",
+  "type": "module",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "start": "export $(cat .env.dev | xargs) && nodemon -e js,env,mjs,json,dev gateway.mjs",
+    "local": "export $(cat .env.local | xargs) && nodemon -e js,env,mjs,json,dev gateway.mjs",
+    "test": "mocha './tests/**/*.spec.js'",
+    "build": "echo \"BUILD PROCESS ENDED NOTHING TO DO\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sylorion/smp-backend.git"
+  },
+  "keywords": [
+    "gateway",
+    "proxy",
+    "federation",
+    "hub",
+    "entrance",
+    "doc",
+    "overview",
+    "api",
+    "services",
+    "smp",
+    "gway"
+  ],
+  "author": "Services",
+  "license": "Copyright Services 2024",
+  "bugs": {
+    "url": "https://github.com/sylorion/smp-backend/issues"
+  },
+  "homepage": "https://github.com/sylorion/smp-backend#readme",
+  "dependencies": {
+    "@apollo/gateway": "^2.8.2",
+    "@apollo/server": "^4.11.0",
+    "@graphql-tools/load-files": "^7.0.0",
+    "apollo-server-express": "^3.13.0",
+    "dataloader": "^2.2.2",
+    "dotenv": "^16.4.5",
+    "graphql-request": "^6.1.0",
+    "graphql-subscriptions": "^2.0.0",
+    "graphql-type-json": "^0.3.2",
+    "graphql-ws": "^6.0.2",
+    "lodash": "^4.17.21",
+    "nodemon": "^3.0.2",
+    "sequelize": "^6.33.0",
+    "smp-bef-utils": "github:sylorion/smp-bef-utils",
+    "smp-core-schema": "github:sylorion/smp-core-schema",
+    "smp-core-tools": "github:sylorion/smp-core-tools",
+    "smp-gql-schema": "github:sylorion/smp-gql-schema",
+    "ws": "^8.18.0"
+  }
+}
