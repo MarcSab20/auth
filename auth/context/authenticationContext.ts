@@ -6,6 +6,7 @@ import { User, AuthState, LoginRequest, AuthError } from '@/types/auth';
 import { AUTH_CONFIG, validateAuthConfig } from '@/src/config/auth.config';
 import { CookieManager} from '@/src/lib/CookieManager';
 import { SessionBridge } from '@/src/lib/SessionBridge';
+import authAPI from '@/src/services/api/authAPI';
 
 const storage = new Persistence('localStorage');
 
@@ -147,38 +148,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'CLEAR_AUTH' });
   }, []);
 
-  // Test de l'authentification app - VERSION CORRIGÉE
+  // Test de l'authentification app via Gateway
   const testAppAuth = useCallback(async () => {
     try {
-      console.log('🔧 [AUTH] Test authentification application...');
+      console.log('🔧 [AUTH] Test authentification application via Gateway...');
       
       // Valider la configuration
       validateAuthConfig();
       console.log('✅ [AUTH] Configuration validée');
       
-      console.log('🔧 [AUTH] Appel smpClient.authenticateApp()...');
+      // Appeler directement l'API via Gateway
+      const result = await authAPI.testAppAuth();
       
-      const result = await smpClient.authenticateApp();
-      console.log(result);
-      
-      const appToken = await smpClient.getAppAccessToken();
-      console.log('✅ [AUTH] Token app récupéré:', appToken ? 'OUI' : 'NON');
-      
-      if (appToken) {
-        // Sauvegarder le token dans les cookies pour partage cross-frontend
-        CookieManager.setAppToken(appToken);
-        console.log('🍪 [AUTH] Token app sauvegardé en cookie');
+      if (result.success) {
+        console.log('✅ [AUTH] Authentification app réussie via Gateway');
+        return { success: true };
+      } else {
+        throw new Error(result.error);
       }
       
-      return { success: true };
     } catch (error: any) {
-      console.error(error);
-      
-      // Debug détaillé de l'erreur
-      if (error.response?.errors) {
-        console.error(error.response.errors);
-      }
-      
+      console.error('❌ [AUTH] Échec auth app via Gateway:', error);
       return { 
         success: false, 
         error: error.message || 'Authentification application échouée' 
@@ -271,124 +261,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Connexion avec logs de debug étendus
   const login = useCallback(async (credentials: LoginRequest) => {
-      console.log('🔄 [AUTH] Début processus connexion...');
-      console.log('🔄 [AUTH] Identifiants:', { username: credentials.username });
+    console.log('🔄 [AUTH] Début processus connexion via Gateway...');
+    
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
+    try {
+      // Étape 1: Authentification app via Gateway
+      console.log('🔄 [AUTH] Étape 1: Authentification app via Gateway...');
+      const appAuthResult = await testAppAuth();
       
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SET_ERROR', payload: null });
-
-      try {
-        // Étape 1: Authentification app
-        console.log('🔄 [AUTH] Étape 1: Authentification app...');
-        const appAuthResult = await testAppAuth();
-        
-        if (!appAuthResult.success) {
-          throw new Error(`ÉCHEC_AUTH_APP: ${appAuthResult.error}`);
-        }
-        
-        console.log('✅ [AUTH] Authentification app réussie');
-        
-        // Étape 2: Authentification utilisateur
-        console.log('🔄 [AUTH] Étape 2: Authentification utilisateur...');
-        const result = await smpClient.authenticateUser(credentials.username, credentials.password);
-        console.log('📝 [AUTH] Réponse authentification utilisateur:', result);
-
-        if (!result || !result.user) {
-          throw new Error('Aucune donnée utilisateur reçue de l\'authentification');
-        }
-
-        // Étape 3: Récupération des tokens
-        console.log('🔄 [AUTH] Étape 3: Récupération tokens...');
-        const accessToken = await smpClient.getUserAccessToken();
-        const refreshToken = await smpClient.getUserRefreshToken();
-        
-        console.log('🔑 [AUTH] Tokens:', {
-          accessToken: accessToken ? 'RÉCUPÉRÉ' : 'MANQUANT',
-          refreshToken: refreshToken ? 'RÉCUPÉRÉ' : 'MANQUANT'
-        });
-
-        if (accessToken) {
-          // Sauvegarder en localStorage
-          localStorage.setItem('access_token', accessToken);
-          if (refreshToken) {
-            localStorage.setItem('refresh_token', refreshToken);
-          }
-
-          dispatch({
-            type: 'SET_TOKENS',
-            payload: {
-              token: accessToken,
-              refreshToken: refreshToken || undefined,
-            }
-          });
-
-          // Créer l'objet utilisateur compatible
-          const user = {
-            userID: result.user.userID,
-            username: result.user.username,
-            email: result.user.email,
-            profileID: result.user.profileID,
-            accessibleOrganizations: [],
-            organizations: [],
-            sub: result.user.userID,
-            roles: [],
-          };
-
-          dispatch({ type: 'SET_USER', payload: user });
-          
-          const cookieString = JSON.stringify(user);
-          localStorage.setItem("smp_user_0", cookieString);
-          
-          // Sauvegarder dans les cookies sécurisés
-          CookieManager.setUserToken(accessToken);
-          if (refreshToken) {
-            CookieManager.setUserRefreshToken(refreshToken);
-          }
-          
-          const sessionId = SessionBridge.generateSessionId();
-          CookieManager.setSessionId(sessionId);
-          
-          // Cookie utilisateur standard pour compatibilité
-          const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-          document.cookie = `smp_user_0=${encodeURIComponent(cookieString)}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
-
-          console.log('✅ [AUTH] Connexion terminée avec succès');
-          console.log('🍪 [AUTH] Cookies définis:', {
-            userCookie: document.cookie.includes('smp_user_0'),
-            userToken: !!CookieManager.getCookie(AUTH_CONFIG.COOKIES.USER_TOKEN),
-            sessionId: !!CookieManager.getCookie(AUTH_CONFIG.COOKIES.SESSION_ID)
-          });
-          
-          dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
-          
-          return { success: true };
-        } else {
-          throw new Error('Aucun token d\'accès reçu');
-        }
-        
-      } catch (error: any) {
-        console.error('❌ [AUTH] Erreur connexion:', error);
-        let errorMessage = 'Erreur de connexion';
-      
-        if (error.message) {
-          if (error.message.includes('ÉCHEC_AUTH_APP')) {
-            errorMessage = `Erreur d'authentification de l'application: ${error.message}`;
-          } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-            errorMessage = 'Identifiants incorrects';
-          } else if (error.message.includes('Network') || error.message.includes('ENOTFOUND')) {
-            errorMessage = 'Erreur de connexion au serveur';
-          } else {
-            errorMessage = error.message;
-          }
-        }
-        
-        dispatch({ type: 'SET_ERROR', payload: errorMessage });
-        return { success: false, error: errorMessage };
-      } finally {
-        dispatch({ type: 'SET_LOADING', payload: false });
+      if (!appAuthResult.success) {
+        throw new Error(`ÉCHEC_AUTH_APP: ${appAuthResult.error}`);
       }
-    }, [testAppAuth]);
+      
+      console.log('✅ [AUTH] Authentification app réussie');
+      
+      // Étape 2: Authentification utilisateur via Gateway
+      console.log('🔄 [AUTH] Étape 2: Authentification utilisateur via Gateway...');
+      const result = await authAPI.signIn({
+        username: credentials.username,
+        password: credentials.password
+      });
 
+      console.log('✅ [AUTH] Connexion utilisateur réussie via Gateway');
+
+      // Mettre à jour l'état
+      dispatch({
+        type: 'SET_TOKENS',
+        payload: {
+          token: result.accessToken,
+          refreshToken: result.refreshToken,
+        }
+      });
+
+      // Créer l'objet utilisateur (à adapter selon vos besoins)
+      const user = {
+        userID: 'user-id', // À récupérer depuis la réponse
+        username: credentials.username,
+        email: credentials.username,
+        profileID: 'profile-id',
+        accessibleOrganizations: [],
+        organizations: [],
+        sub: 'user-sub',
+        roles: [],
+      };
+
+      dispatch({ type: 'SET_USER', payload: user });
+      
+      console.log('✅ [AUTH] Connexion terminée avec succès via Gateway');
+      return { success: true };
+      
+    } catch (error: any) {
+      console.error('❌ [AUTH] Erreur connexion via Gateway:', error);
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      return { success: false, error: error.message };
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  }, [testAppAuth]);
   // Déconnexion avec la SDK
   const logout = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true });

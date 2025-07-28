@@ -22,21 +22,13 @@ import {
   RabbitMQService,
 } from 'smp-core-tools';
 
-// Validation d'une adresse email
-const validateEmail = (email) =>
-  /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/.test(
-    String(email).toLowerCase()
-  );
-
-// Validation d'une URL
-const validateUrl = (url) =>
-  /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,6})([/\w .-]*)*\/?$/.test(url);
-
-// Récupération de la liste des services depuis les variables d'environnement
+// Configuration de base
 const serviceListing = process.env.SMP_GATEWAY_MU_SERVICE_LISTING;
-console.log('Services list from env:', serviceListing);
+const port = process.env.PORT || 4000;
 
-// Mise à jour du heartbeat toutes les `global.heartbeat.interval` secondes
+console.log('🚀 [GATEWAY] Starting with services:', serviceListing);
+
+// Mise à jour du heartbeat
 setInterval(() => {
   global.heartbeat.updateHeartbeat();
 }, global.heartbeat.interval);
@@ -46,15 +38,12 @@ const authorizationGQL = authorizationDirective('authorization');
 
 async function main() {
   try {
-    // Initialisation du cache (si nécessaire)
-    // cache.promiseClient();
-
     // Vérification des services disponibles
     const { avalaibleServices, unavailableServices } = await reacheableServices(serviceListing);
-    console.log('Available Services:', avalaibleServices);
-    console.log('Unavailable Services:', unavailableServices);
+    console.log('✅ [GATEWAY] Available Services:', avalaibleServices);
+    console.log('⚠️ [GATEWAY] Unavailable Services:', unavailableServices);
 
-    // Configuration du Gateway
+    // Configuration du Gateway Apollo avec gestion d'erreur
     const gateway = new ApolloGateway({
       supergraphSdl: new IntrospectAndCompose({
         subgraphs: avalaibleServices,
@@ -63,26 +52,59 @@ async function main() {
           authorization: authorizationGQL.authorizationDirectiveTransformer,
         },
       }),
+      buildService({ url }) {
+        return new RemoteGraphQLDataSource({
+          url,
+          willSendRequest({ request, context }) {
+            if (context.req?.headers['x-app-id']) {
+              request.http.headers.set('X-App-ID', context.req.headers['x-app-id']);
+            }
+            if (context.req?.headers['x-app-secret']) {
+              request.http.headers.set('X-App-Secret', context.req.headers['x-app-secret']);
+            }
+            if (context.req?.headers['authorization']) {
+              request.http.headers.set('Authorization', context.req.headers['authorization']);
+            }
+          },
+        });
+      },
     });
 
-    // Création du serveur HTTP et de l'application Express
     const app = express();
     const httpServer = http.createServer(app);
 
-    // Création d'Apollo Server
+    const corsOptions = {
+      origin: [
+        'http://localhost:3000', 
+        'http://localhost:3001', 
+        'http://localhost:4000', 
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:4000',
+      ],
+      credentials: true,
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-App-ID',
+        'X-App-Secret',
+        'X-Request-ID',
+        'X-Trace-ID',
+      ],
+    };
+
     const server = new ApolloServer({
       gateway,
-      introspection: true, // Activer l'introspection (utile pour les environnements de développement)
+      introspection: true,
       plugins: [
         ApolloServerPluginDrainHttpServer({ httpServer }),
         {
           async serverWillStart() {
             return {
               async drainServer() {
-                console.log('\n');
-                console.log(`${appConfig.componentName}: Draining Apollo Server....`);
+                console.log('\n🔄 [GATEWAY] Draining Apollo Server...');
                 await server.stop();
-                console.log(`${appConfig.componentName}: Apollo Server stopped.`);
+                console.log('✅ [GATEWAY] Apollo Server stopped.');
               },
             };
           },
@@ -90,64 +112,69 @@ async function main() {
       ],
     });
 
-    // Démarrage d'Apollo Server
     await server.start();
 
-    // Middleware pour compter les requêtes et ajouter un UUID unique
     app.use(requestCounter);
     app.use(requestUUIDMiddleware);
 
-    // Configuration CORS
+    app.use('/graphql', cors(corsOptions));
+    
+    // Middleware de logging pour debug
+    app.use('/graphql', (req, res, next) => {
+      console.log('📨 [GATEWAY] Incoming request:', {
+        method: req.method,
+        headers: {
+          'content-type': req.headers['content-type'],
+          'x-app-id': req.headers['x-app-id'],
+          'authorization': req.headers['authorization'] ? 'PRESENT' : 'MISSING',
+        },
+        body: req.body ? 'PRESENT' : 'EMPTY',
+      });
+      next();
+    });
+
     app.use(
       '/graphql',
-      cors(), // Activation de CORS
-      express.json({ limit: '150mb' }), // Middleware pour parser le JSON
-      authenticationMiddleware, // Middleware d'authentification
+      express.json({ limit: '150mb' }),
+      authenticationMiddleware,
       expressMiddleware(server, {
         context: async ({ req }) => {
           const ctxt = {
             ...updateContext({ req }),
-            SMPEvents, // Ajout de SMPEvents au contexte
-            config: appConfig, // Ajout de la configuration au contexte
+            SMPEvents,
+            config: appConfig,
             authN: authN,
             cache: cache,
           };
           const context = { me: req.auth, ...ctxt };
           ctxt.logger.info(
-            'Context created.... ENV: ' +
-              appConfig.envExc +
-              ' ' +
-              JSON.stringify(context.me, null, 2)
+            `🔍 [GATEWAY] Context created - ENV: ${appConfig.envExc} - User: ${JSON.stringify(context.me, null, 2)}`
           );
           return context;
         },
       })
     );
 
-    // Démarrage du serveur HTTP
+    // Health check endpoint
+    app.get('/health', (req, res) => {
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        services: avalaibleServices.length,
+        port: port,
+      });
+    });
+
     const graphqlPath = '/graphql';
-    httpServer.listen(appConfig.apiPort, () => {
-      if (
-        hostname().includes('local') ||
-        hostname().includes('home') ||
-        !hostname().includes('.')
-      ) {
-        console.log(
-          `🚀 [${new Date()}] Gateway ready at http://localhost:${appConfig.apiPort}${graphqlPath}`
-        );
-      } else {
-        console.log(
-          `🚀 [${new Date()}] Gateway ready at http://gateway.api.dev.services.ceo:${appConfig.apiPort}${graphqlPath}`
-        );
-      }
+    httpServer.listen(port, () => {
     });
   } catch (error) {
-    console.error('Error starting the Gateway server:', error);
+    console.error('❌ [GATEWAY] Error starting server:', error);
     process.exit(1);
   }
 }
 
 main().catch((error) => {
-  console.error('Unhandled error:', error);
+  console.error('❌ [GATEWAY] Unhandled error:', error);
   process.exit(1);
 });

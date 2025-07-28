@@ -34,6 +34,4 @@ export function validateAuthConfig(): void {
       throw new Error(`Configuration manquante: ${key}`);
     }
   }
-  
-  console.log('✅ Configuration d\'authentification validée');
 }
