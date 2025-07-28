@@ -1,5 +1,24 @@
-// dashboard/src/services/api/authAPI.ts
 import { AUTH_CONFIG } from '@/src/config/auth.config';
+
+interface UserValidationResult {
+  valid: boolean;
+  user?: {
+    userID: string;
+    username: string;
+    email?: string;
+    profileID: string;
+    accessibleOrganizations: any[];
+    organizations: string[];
+    sub: string;
+    roles: string[];
+    given_name?: string;
+    family_name?: string;
+    state?: string;
+    email_verified?: boolean;
+    attributes?: any;
+  };
+  error?: string;
+}
 
 interface AppAuthResult {
   success: boolean;
@@ -8,21 +27,15 @@ interface AppAuthResult {
   error?: string;
 }
 
-interface UserValidationResult {
-  valid: boolean;
-  user?: any;
-  error?: string;
-}
-
 class AuthAPI {
   private baseURL = AUTH_CONFIG.GRAPHQL_URL;
 
   /**
-   * Authentification de l'application Dashboard via Gateway
+   * 🔧 Authentification de l'application Dashboard
    */
   async testAppAuth(): Promise<AppAuthResult> {
     try {
-      console.log('🔧 [DASHBOARD-API] Authentification app Dashboard via Gateway...');
+      console.log('🔧 [DASHBOARD-API] Authentification app Dashboard...');
       
       const query = `
         mutation AuthenticateApp($appLoginInput: AppLoginInput!) {
@@ -42,8 +55,8 @@ class AuthAPI {
 
       const variables = {
         appLoginInput: {
-          appID: AUTH_CONFIG.APP_ID,
-          appKey: AUTH_CONFIG.APP_SECRET
+          appID: AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+          appKey: AUTH_CONFIG.DASHBOARD_APP.APP_SECRET
         }
       };
 
@@ -51,16 +64,14 @@ class AuthAPI {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.APP_SECRET,
+          'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+          'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
           'X-Request-ID': this.generateRequestId(),
           'X-Client-Name': 'dashboard-app',
           'X-Client-Version': '1.0.0'
         },
         body: JSON.stringify({ query, variables }),
       });
-
-      console.log('📡 [DASHBOARD-API] Response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -69,16 +80,15 @@ class AuthAPI {
       }
 
       const result = await response.json();
-      console.log('📋 [DASHBOARD-API] App auth result:', result);
 
       if (result.errors && result.errors.length > 0) {
         console.error('❌ [DASHBOARD-API] GraphQL errors:', result.errors);
-        throw new Error(result.errors[0]);
+        throw new Error(result.errors[0].message);
       }
 
       const authData = result.data?.authenticateApp;
       if (authData?.accessToken) {
-        // Stocker le token app pour le dashboard
+        // Stocker le token app Dashboard
         localStorage.setItem('dashboard_app_token', authData.accessToken);
         if (authData.refreshToken) {
           localStorage.setItem('dashboard_app_refresh', authData.refreshToken);
@@ -104,7 +114,7 @@ class AuthAPI {
   }
 
   /**
-   * Validation de token utilisateur avec enrichissement
+   * 🔍 Validation de token utilisateur avec enrichissement (CORRECTION)
    */
   async validateUserToken(token: string): Promise<UserValidationResult> {
     try {
@@ -148,8 +158,8 @@ class AuthAPI {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.APP_SECRET,
+          'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+          'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
           'X-Client-Name': 'dashboard-app',
           ...(dashboardAppToken && { 'X-App-Token': dashboardAppToken }),
           'X-Request-ID': this.generateRequestId(),
@@ -178,7 +188,7 @@ class AuthAPI {
         // Convertir au format Dashboard
         const user = {
           userID: validation.userInfo.sub,
-          username: validation.userInfo.preferred_username,
+          username: validation.userInfo.preferred_username || validation.userInfo.email,
           email: validation.userInfo.email,
           profileID: validation.userInfo.sub, // À adapter selon votre logique
           accessibleOrganizations: validation.userInfo.organization_ids || [],
@@ -206,7 +216,7 @@ class AuthAPI {
   }
 
   /**
-   * Déconnexion utilisateur
+   * 🚪 Déconnexion utilisateur
    */
   async logout(token: string): Promise<{ success: boolean }> {
     try {
@@ -222,8 +232,8 @@ class AuthAPI {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.APP_SECRET,
+          'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+          'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
           'X-Client-Name': 'dashboard-app',
           ...(dashboardAppToken && { 'X-App-Token': dashboardAppToken }),
           'X-Request-ID': this.generateRequestId(),
@@ -245,60 +255,6 @@ class AuthAPI {
     } catch (error: any) {
       console.error('❌ [DASHBOARD-API] Erreur déconnexion:', error);
       return { success: false };
-    }
-  }
-
-  /**
-   * Récupérer les organisations utilisateur
-   */
-  async getUserOrganizations(userId: string): Promise<any[]> {
-    try {
-      const query = `
-        query GetUserOrganizations($userId: String!) {
-          getUserOrganizations(userId: $userId) {
-            organizationID
-            name
-            role
-            permissions
-          }
-        }
-      `;
-
-      const dashboardAppToken = localStorage.getItem('dashboard_app_token');
-      const userToken = localStorage.getItem('access_token');
-      
-      const response = await fetch(this.baseURL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.APP_SECRET,
-          'X-Client-Name': 'dashboard-app',
-          ...(dashboardAppToken && { 'X-App-Token': dashboardAppToken }),
-          ...(userToken && { 'Authorization': `Bearer ${userToken}` }),
-          'X-Request-ID': this.generateRequestId(),
-        },
-        body: JSON.stringify({ 
-          query, 
-          variables: { userId } 
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to get organizations: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.errors) {
-        throw new Error(result.errors[0].message);
-      }
-
-      return result.data?.getUserOrganizations || [];
-
-    } catch (error: any) {
-      console.error('❌ [DASHBOARD-API] Erreur getUserOrganizations:', error);
-      return [];
     }
   }
 

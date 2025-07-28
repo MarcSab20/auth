@@ -1,9 +1,28 @@
 // dashboard/src/config/auth.config.ts
 export const AUTH_CONFIG = {
-  APP_ID: process.env.NEXT_PUBLIC_APP_ID || 'f2655ffda8594853',
-  APP_SECRET: process.env.NEXT_PUBLIC_APP_SECRET || 'TA7Vin/JY0YIp9sGpiy6d7ade351Ub+Ia3Pj1acdMb7AxKL/t1vVCcXt6NSaEiTfYbCes1b4Qs8l54buR17oQdsP9p0lpx0ojKaSdjzER9ftagPpr/5byPZhyxsQNU/V9dzoIx4eVV2sSiuFq4XFNL48v6wZz3znX4IlLenGji8=',
-  API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
+  AUTH_APP: {
+    APP_ID: process.env.NEXT_PUBLIC_AUTH_APP_ID || 'f2655ffda8594852',
+    APP_SECRET: process.env.NEXT_PUBLIC_AUTH_APP_SECRET || 'TA7Vin/JY0YIp9sGpiy6d7ade351Ub+Ia3Pj1acdMb7AxKL/t1vVCcXt6NSaEiTfYbCes1b4Qs8l54buR17oQdsP9p0lpx0ojKaSdjzER9ftagPpr/5byPZhyxsQNU/V9dzoIx4eVV2sSiuFq4XFNL48v6wZz3znX4IlLenGji8=',
+  },
+  DASHBOARD_APP: {
+    APP_ID: process.env.NEXT_PUBLIC_DASHBOARD_APP_ID || 'f2655ffda8594853',
+    APP_SECRET: process.env.NEXT_PUBLIC_DASHBOARD_APP_SECRET || 'TA7Vin/JY0YIp9sGpiy6d7ade351Ub+Ia3Pj1acdMb7AxKL/t1vVCcXt6NSaEiTfYbCes1b4Qs8l54buR17oQdsP9p0lpx0ojKaSdjzER9ftagPpr/5byPZhyxsQNU/V9dzoIx4eVV2sSiuFq4XFNL48v6wZz3znX4IlLenGji8=',
+  },
+  // Gateway partagé
+  GATEWAY_URL: process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:4000',
   GRAPHQL_URL: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
+  
+  // URLs des applications
+  AUTH_URL: process.env.NEXT_PUBLIC_AUTH_URL || 'http://localhost:3001',
+  DASHBOARD_URL: process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000',
+  
+  // Configuration de session
+  SESSION_DURATION: 8 * 60 * 60 * 1000, // 8 heures
+  INACTIVITY_LIMIT: 2 * 60 * 60 * 1000, // 2 heures
+  
+  // Cookies cross-domain
+  COOKIE_DOMAIN: process.env.NODE_ENV === 'production' ? '.services.com' : 'localhost',
+  COOKIE_SECURE: process.env.NODE_ENV === 'production',
   
   APP_ACCESS_DURATION: 30 * 60 * 1000, // 30 minutes
   USER_ACCESS_DURATION: 30 * 60 * 1000, // 30 minutes

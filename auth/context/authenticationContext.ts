@@ -7,13 +7,14 @@ import { User, AuthState, LoginRequest, AuthError } from '@/types/auth';
 import { AUTH_CONFIG, validateAuthConfig } from '@/src/config/auth.config';
 import { SharedSessionManager, SessionData } from '@/src/lib/SharedSessionManager';
 import authAPI from '@/src/services/api/authAPI';
+import { TransitionService } from '@/src/lib/TransitionService';
 
 const storage = new Persistence('localStorage');
 
 const smpClient = new SMPClient({
-  appId: AUTH_CONFIG.APP_ID,
-  appSecret: AUTH_CONFIG.APP_SECRET,
-  apiUrl: AUTH_CONFIG.API_URL,
+  appId: AUTH_CONFIG.AUTH_APP.APP_ID,
+  appSecret: AUTH_CONFIG.AUTH_APP.APP_SECRET,
+  apiUrl: AUTH_CONFIG.AUTH_URL,
   graphqlUrl: AUTH_CONFIG.GRAPHQL_URL,
   defaultLanguage: 'fr_FR',
   appAccessDuration: AUTH_CONFIG.APP_ACCESS_DURATION,
@@ -326,34 +327,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }, [testAppAuth]);
 
   // Redirection vers Dashboard avec transition
-  const redirectToDashboard = useCallback(async (returnUrl: string = '/account') => {
-    try {
-      console.log('🔄 [AUTH] Préparation redirection vers Dashboard...');
-      
-      if (!state.isAuthenticated || !state.user) {
-        throw new Error('Utilisateur non authentifié');
-      }
-
-      // Préparer la transition
-      const transitionToken = SharedSessionManager.prepareTransition('dashboard', returnUrl);
-      
-      // Construire l'URL de transition
-      const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000';
-      const transitionUrl = new URL('/transition', dashboardUrl);
-      transitionUrl.searchParams.set('returnUrl', returnUrl);
-      transitionUrl.searchParams.set('token', transitionToken);
-      transitionUrl.searchParams.set('from', 'auth');
-      
-      console.log('🚀 [AUTH] Redirection vers Dashboard:', transitionUrl.toString());
-      
-      // Rediriger
-      window.location.href = transitionUrl.toString();
-      
-    } catch (error: any) {
-      console.error('❌ [AUTH] Erreur redirection Dashboard:', error);
-      dispatch({ type: 'SET_ERROR', payload: error.message });
+ const redirectToDashboard = useCallback(async (returnUrl: string = '/account'): Promise<void> => {
+  try {
+    console.log('🔄 [AUTH] Préparation redirection vers Dashboard...');
+    
+    if (!state.isAuthenticated || !state.user) {
+      throw new Error('Utilisateur non authentifié');
     }
-  }, [state.isAuthenticated, state.user]);
+
+    // Vérifier que nous avons les tokens nécessaires
+    if (!state.token) {
+      throw new Error('Token d\'accès manquant');
+    }
+
+    // Utiliser TransitionService pour préparer la transition
+    const transitionToken = TransitionService.prepareTransition(
+      state.user,
+      state.token,
+      state.refreshToken || undefined,
+      returnUrl
+    );
+    
+    // Construire l'URL de transition vers Dashboard
+    const dashboardUrl = new URL('/transition', process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000');
+    dashboardUrl.searchParams.set('token', transitionToken);
+    dashboardUrl.searchParams.set('returnUrl', returnUrl);
+    dashboardUrl.searchParams.set('from', 'auth');
+    
+    console.log('🚀 [AUTH] Redirection vers Dashboard:', dashboardUrl.toString());
+    
+    // Effectuer la redirection
+    window.location.href = dashboardUrl.toString();
+    
+  } catch (error: any) {
+    console.error('❌ [AUTH] Erreur redirection Dashboard:', error);
+    dispatch({ type: 'SET_ERROR', payload: error.message });
+    throw error; // Re-throw pour que l'appelant puisse gérer l'erreur
+  }
+}, [state.isAuthenticated, state.user, state.token, state.refreshToken]);
+
 
   // Déconnexion avec nettoyage session partagée
   const logout = useCallback(async () => {
@@ -388,7 +400,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (validation.valid && validation.user) {
         user = {
           userID: validation.user.userID,
-          username: validation.user.username || validation.user.email,
+          username: validation.user.username,
           email: validation.user.email,
           profileID: validation.user.profileID,
           accessibleOrganizations: validation.user.accessibleOrganizations || [],

@@ -6,7 +6,6 @@ import { useMagicLink } from "@/context/magicLinkContext";
 import Link from "next/link";
 import { Button } from '@/src/components/landing-page/Button';
 import { useSearchParams } from "next/navigation";
-import { PostLoginRedirect } from "@/src/components/auth/RedirectToDashboard";
 import { RedirectToDashboard } from "@/src/components/auth/RedirectToDashboard";
 
 export default function SignInForm() {
@@ -263,7 +262,6 @@ export default function SignInForm() {
                   </div>
                   <RedirectToDashboard
                     returnUrl="/account"
-                    size="sm"
                     className="whitespace-nowrap"
                   >
                     Accéder au Dashboard
@@ -437,8 +435,6 @@ export default function SignInForm() {
       )}
       
       <div className="mt-8 text-center text-sm text-gray-700 border-t pt-6">
-        {/* Redirection automatique après connexion réussie */}
-        <PostLoginRedirect />
         Pas encore inscrit ?
         <Link href="/signup" className="text-blue-500 underline ml-1 hover:no-underline">
           Créer un compte

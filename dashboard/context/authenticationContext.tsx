@@ -5,6 +5,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import authAPI from '@/src/services/api/authAPI';
 import { AUTH_CONFIG, validateAuthConfig } from '@/src/config/auth.config';
 import { SharedSessionManager, SessionData } from '@/src/lib/SharedSessionManager';
+import { TransitionService } from '@/src/lib/TransitionService';
 
 interface User {
   userID: string;
@@ -183,131 +184,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Initialisation et récupération de session partagée
-  useEffect(() => {
-    const initializeAuth = async () => {
-      console.log('🔧 [DASHBOARD-AUTH] Initialisation authentification Dashboard...');
-      dispatch({ type: 'SET_LOADING', payload: true });
-      
-      try {
-        // 1. Test de l'authentification app Dashboard
-        const appAuthResult = await testAppAuth();
-        if (!appAuthResult.success) {
-          throw new Error(`Authentification app Dashboard échouée: ${appAuthResult.error}`);
-        }
-        
-        // 2. Essayer de finaliser une transition en cours
-        let sessionData = await completeTransitionFromAuth();
-        
-        // 3. Si pas de transition, vérifier session existante
-        if (!sessionData) {
-          sessionData = SharedSessionManager.getSession();
-        }
-        
-        if (sessionData && SharedSessionManager.isSessionValid(sessionData)) {
-          console.log('✅ [DASHBOARD-AUTH] Session partagée valide trouvée');
-          
-          // Valider le token avec le backend Dashboard
-          const validation = await authAPI.validateUserToken(sessionData.tokens.accessToken);
-          
-          if (validation.valid && validation.user) {
-            // Mettre à jour la source de la session vers dashboard
-            sessionData.source = 'dashboard';
-            SharedSessionManager.storeSession(sessionData);
-            
-            // Restaurer dans le state
-            dispatch({ 
-              type: 'SET_TOKENS', 
-              payload: { 
-                token: sessionData.tokens.accessToken, 
-                refreshToken: sessionData.tokens.refreshToken 
-              } 
-            });
-            dispatch({ type: 'SET_USER', payload: validation.user });
-            
-            // Créer le cookie compatible serveur
-            const cookieUser = {
-              userID: validation.user.userID,
-              username: validation.user.username,
-              email: validation.user.email,
-              profileID: validation.user.profileID,
-              accessibleOrganizations: validation.user.accessibleOrganizations,
-              organizations: validation.user.organizations,
-              sub: validation.user.sub,
-              roles: validation.user.roles
-            };
-            
-            const cookieString = JSON.stringify(cookieUser);
-            localStorage.setItem("smp_user_0", cookieString);
-            
-            // Créer le cookie pour le serveur
-            const cookieValue = encodeURIComponent(cookieString);
-            const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-            document.cookie = `smp_user_0=${cookieValue}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
-            
-            console.log('✅ [DASHBOARD-AUTH] Session Dashboard restaurée avec succès');
-          } else {
-            console.log('❌ [DASHBOARD-AUTH] Token invalide, nettoyage session');
-            SharedSessionManager.clearSession();
-            dispatch({ type: 'CLEAR_AUTH' });
-          }
-        } else {
-          console.log('ℹ️ [DASHBOARD-AUTH] Aucune session partagée valide trouvée');
-          dispatch({ type: 'SET_LOADING', payload: false });
-        }
-      } catch (error: any) {
-        console.error('❌ [DASHBOARD-AUTH] Erreur initialisation:', error);
-        dispatch({ type: 'CLEAR_AUTH' });
-        dispatch({ type: 'SET_ERROR', payload: error.message });
-      }
-    };
-
-    initializeAuth();
-
-    // Écouter les changements de session cross-app
-    const unsubscribe = SharedSessionManager.onSessionChange((sessionData) => {
-      if (sessionData && SharedSessionManager.isSessionValid(sessionData)) {
-        console.log('🔄 [DASHBOARD-AUTH] Session mise à jour depuis autre app');
-        dispatch({ 
-          type: 'SET_TOKENS', 
-          payload: { 
-            token: sessionData.tokens.accessToken, 
-            refreshToken: sessionData.tokens.refreshToken 
-          } 
-        });
-        dispatch({ type: 'SET_USER', payload: sessionData.user });
-      } else {
-        console.log('🚪 [DASHBOARD-AUTH] Déconnexion depuis autre app');
-        dispatch({ type: 'CLEAR_AUTH' });
-      }
-    });
-
-    // Écouter les événements de déconnexion automatique
-    window.addEventListener('auth:logout', handleAutoLogout);
+ useEffect(() => {
+  const initializeAuth = async () => {
+    dispatch({ type: 'SET_LOADING', payload: true });
     
-    return () => {
-      unsubscribe();
-      window.removeEventListener('auth:logout', handleAutoLogout);
-    };
-  }, [handleAutoLogout, testAppAuth, completeTransitionFromAuth]);
+    try {
+      // 1. Authentifier l'app Dashboard
+      const appAuthResult = await authAPI.testAppAuth();
+      if (!appAuthResult.success) {
+        throw new Error(`Authentification app Dashboard échouée: ${appAuthResult.error}`);
+      }
+      
+      // 2. Finaliser la transition ou récupérer session existante
+      const transitionData = TransitionService.completeTransition();
+      
+      if (transitionData) {
+        // Valider le token avec le backend
+        const validation = await authAPI.validateUserToken(transitionData.accessToken);
+        
+        if (validation.valid && validation.user) {
+          dispatch({ type: 'SET_TOKENS', payload: { 
+            token: transitionData.accessToken,
+            refreshToken: transitionData.refreshToken
+          }});
+          dispatch({ type: 'SET_USER', payload: validation.user });
+          
+          console.log('✅ [DASHBOARD-AUTH] Session établie avec succès');
+        } else {
+          console.log('❌ [DASHBOARD-AUTH] Token invalide, nettoyage');
+          TransitionService.clearSession();
+          redirectToAuth();
+        }
+      } else {
+        console.log('ℹ️ [DASHBOARD-AUTH] Aucune session trouvée');
+        redirectToAuth();
+      }
+    } catch (error: any) {
+      console.error('❌ [DASHBOARD-AUTH] Erreur initialisation:', error);
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      redirectToAuth();
+    }
+  };
+
+  initializeAuth();
+}, []);
 
   // Redirection vers l'app d'authentification
-  const redirectToAuth = useCallback((returnUrl: string = '/account') => {
-    try {
-      console.log('🔄 [DASHBOARD-AUTH] Redirection vers application Auth...');
-      
-      const authUrl = process.env.NEXT_PUBLIC_AUTH_URL || 'http://localhost:3001';
-      const redirectUrl = new URL('/signin', authUrl);
-      redirectUrl.searchParams.set('returnUrl', returnUrl);
-      redirectUrl.searchParams.set('from', 'dashboard');
-      
-      console.log('🚀 [DASHBOARD-AUTH] Redirection vers Auth:', redirectUrl.toString());
-      window.location.href = redirectUrl.toString();
-      
-    } catch (error: any) {
-      console.error('❌ [DASHBOARD-AUTH] Erreur redirection Auth:', error);
-      dispatch({ type: 'SET_ERROR', payload: error.message });
-    }
-  }, []);
+   const redirectToAuth = useCallback((returnUrl: string = '/account') => {
+  const authUrl = new URL('/signin', AUTH_CONFIG.AUTH_URL);
+  authUrl.searchParams.set('returnUrl', returnUrl);
+  authUrl.searchParams.set('from', 'dashboard');
+  
+  window.location.href = authUrl.toString();
+}, []);
 
   // Déconnexion avec nettoyage session partagée
   const logout = useCallback(async () => {
@@ -382,6 +311,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
   }, []);
+
+ 
 
   const clearError = useCallback(() => {
     dispatch({ type: 'SET_ERROR', payload: null });
