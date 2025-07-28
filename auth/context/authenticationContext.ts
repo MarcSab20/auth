@@ -1,16 +1,15 @@
+// auth/context/authenticationContext.tsx - VERSION AVEC TRANSITION
 'use client';
 
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { SMPClient, Persistence } from 'smp-sdk-ts';
 import { User, AuthState, LoginRequest, AuthError } from '@/types/auth';
 import { AUTH_CONFIG, validateAuthConfig } from '@/src/config/auth.config';
-import { CookieManager} from '@/src/lib/CookieManager';
-import { SessionBridge } from '@/src/lib/SessionBridge';
+import { SharedSessionManager, SessionData } from '@/src/lib/SharedSessionManager';
 import authAPI from '@/src/services/api/authAPI';
 
 const storage = new Persistence('localStorage');
 
-// Configuration SDK avec logs de debug
 const smpClient = new SMPClient({
   appId: AUTH_CONFIG.APP_ID,
   appSecret: AUTH_CONFIG.APP_SECRET,
@@ -40,10 +39,9 @@ interface AuthContextType {
   clearError: () => void;
   isTokenExpiringSoon: () => boolean;
   
-  // Debug methods améliorés
+  // Méthodes de transition
+  redirectToDashboard: (returnUrl?: string) => Promise<void>;
   testAppAuth: () => Promise<{ success: boolean; error?: string }>;
-  getAppToken: () => Promise<string | null>;
-  getSharedTokens: () => ReturnType<typeof SessionBridge.getSharedTokens>;
   
   // Magic Link integration
   loginWithMagicLink: (token: string) => Promise<{ success: boolean; error?: string }>;
@@ -127,8 +125,7 @@ function authReducer(state: ExtendedAuthState, action: AuthAction): ExtendedAuth
       return { ...state, lastActivity: new Date() };
     
     case 'CLEAR_AUTH':
-      // Nettoyer aussi les cookies lors du clear
-      CookieManager.clearAllAuthCookies();
+      SharedSessionManager.clearSession();
       return {
         ...extendedInitialState,
         isLoading: false,
@@ -148,27 +145,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'CLEAR_AUTH' });
   }, []);
 
-  // Test de l'authentification app via Gateway
+  // Test de l'authentification app
   const testAppAuth = useCallback(async () => {
     try {
-      console.log('🔧 [AUTH] Test authentification application via Gateway...');
+      console.log('🔧 [AUTH] Test authentification application...');
       
-      // Valider la configuration
       validateAuthConfig();
       console.log('✅ [AUTH] Configuration validée');
       
-      // Appeler directement l'API via Gateway
       const result = await authAPI.testAppAuth();
       
       if (result.success) {
-        console.log('✅ [AUTH] Authentification app réussie via Gateway');
+        console.log('✅ [AUTH] Authentification app réussie');
         return { success: true };
       } else {
         throw new Error(result.error);
       }
       
     } catch (error: any) {
-      console.error('❌ [AUTH] Échec auth app via Gateway:', error);
+      console.error('❌ [AUTH] Échec auth app:', error);
       return { 
         success: false, 
         error: error.message || 'Authentification application échouée' 
@@ -176,75 +171,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-
-  // Obtenir le token app
-  const getAppToken = useCallback(async () => {
-    try {
-      return await smpClient.getAppAccessToken();
-    } catch (error) {
-      console.error('❌ [AUTH] Échec récupération token app:', error);
-      return null;
-    }
-  }, []);
-
-  const getSharedTokens = useCallback(() => {
-    return SessionBridge.getSharedTokens();
-  }, []);
-
+  // Initialisation et récupération session existante depuis SharedSessionManager
   useEffect(() => {
     const initializeAuth = async () => {
-      console.log('🔧 [AUTH] Initialisation authentification...');
+      console.log('🔧 [AUTH] Initialisation authentification avec session partagée...');
       dispatch({ type: 'SET_LOADING', payload: true });
       
       try {
-        // 1. Synchroniser depuis les cookies si disponibles
-        SessionBridge.syncTokensToStorage();
-        
-        // 2. Test de l'authentification app
+        // 1. Test de l'authentification app
         const appAuthResult = await testAppAuth();
         if (!appAuthResult.success) {
           throw new Error(`Authentification app échouée: ${appAuthResult.error}`);
         }
         
-        // 3. Vérifier les tokens utilisateur stockés
-        const storedToken = localStorage.getItem('access_token');
-        const storedRefreshToken = localStorage.getItem('refresh_token');
-        const storedUser = localStorage.getItem('smp_user_0');
+        // 2. Vérifier session partagée existante
+        const existingSession = SharedSessionManager.getSession();
         
-        console.log('🔧 [AUTH] Tokens stockés:', {
-          accessToken: storedToken ? 'PRÉSENT' : 'MANQUANT',
-          refreshToken: storedRefreshToken ? 'PRÉSENT' : 'MANQUANT',
-          user: storedUser ? 'PRÉSENT' : 'MANQUANT'
-        });
-        
-        if (storedToken && storedUser) {
-          try {
-            const user = JSON.parse(storedUser);
-            
-            dispatch({ 
-              type: 'SET_TOKENS', 
-              payload: { 
-                token: storedToken, 
-                refreshToken: storedRefreshToken || undefined 
-              } 
-            });
-            dispatch({ type: 'SET_USER', payload: user });
-            dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
-            
-            // Synchroniser vers les cookies
-            SessionBridge.syncTokensToCookies();
-            
-            console.log('✅ [AUTH] Utilisateur restauré depuis le storage');
-          } catch (error) {
-            console.error( error);
-            dispatch({ type: 'CLEAR_AUTH' });
-          }
+        if (existingSession && SharedSessionManager.isSessionValid(existingSession)) {
+          console.log('✅ [AUTH] Session partagée valide trouvée');
+          
+          // Restaurer la session dans le state
+          dispatch({ 
+            type: 'SET_TOKENS', 
+            payload: { 
+              token: existingSession.tokens.accessToken, 
+              refreshToken: existingSession.tokens.refreshToken,
+              sessionId: existingSession.sessionId
+            } 
+          });
+          dispatch({ type: 'SET_USER', payload: existingSession.user });
+          dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
+          
+          console.log('✅ [AUTH] Session restaurée depuis SharedSessionManager');
         } else {
-          console.log('ℹ️ [AUTH] Aucune donnée auth stockée trouvée');
+          console.log('ℹ️ [AUTH] Aucune session partagée valide trouvée');
           dispatch({ type: 'SET_LOADING', payload: false });
         }
       } catch (error: any) {
-        console.error(error);
+        console.error('❌ [AUTH] Erreur initialisation:', error);
         dispatch({ type: 'CLEAR_AUTH' });
         dispatch({ type: 'SET_ERROR', payload: error.message });
       }
@@ -252,75 +216,146 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
 
+    // Écouter les changements de session cross-app
+    const unsubscribe = SharedSessionManager.onSessionChange((sessionData) => {
+      if (sessionData && SharedSessionManager.isSessionValid(sessionData)) {
+        console.log('🔄 [AUTH] Session mise à jour depuis autre app');
+        dispatch({ 
+          type: 'SET_TOKENS', 
+          payload: { 
+            token: sessionData.tokens.accessToken, 
+            refreshToken: sessionData.tokens.refreshToken,
+            sessionId: sessionData.sessionId
+          } 
+        });
+        dispatch({ type: 'SET_USER', payload: sessionData.user });
+      } else {
+        console.log('🚪 [AUTH] Déconnexion depuis autre app');
+        dispatch({ type: 'CLEAR_AUTH' });
+      }
+    });
+
     window.addEventListener('auth:logout', handleAutoLogout);
     
     return () => {
+      unsubscribe();
       window.removeEventListener('auth:logout', handleAutoLogout);
     };
   }, [handleAutoLogout, testAppAuth]);
 
-  // Connexion avec logs de debug étendus
+  // Connexion avec création de session partagée
   const login = useCallback(async (credentials: LoginRequest) => {
-    console.log('🔄 [AUTH] Début processus connexion via Gateway...');
+  console.log('🔄 [AUTH] Début processus connexion...');
+  
+  dispatch({ type: 'SET_LOADING', payload: true });
+  dispatch({ type: 'SET_ERROR', payload: null });
+
+  try {
+    // Étape 1: Authentification app
+    const appAuthResult = await testAppAuth();
+    if (!appAuthResult.success) {
+      throw new Error(`ÉCHEC_AUTH_APP: ${appAuthResult.error}`);
+    }
     
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
+    // Étape 2: Authentification utilisateur
+    const result = await authAPI.signIn({
+      username: credentials.username,
+      password: credentials.password
+    });
 
-    try {
-      // Étape 1: Authentification app via Gateway
-      console.log('🔄 [AUTH] Étape 1: Authentification app via Gateway...');
-      const appAuthResult = await testAppAuth();
+    console.log('✅ [AUTH] Connexion utilisateur réussie');
+
+    // CORRECTION : Récupérer les données utilisateur depuis la validation du token
+    let user: User;
+    
+    if (result.accessToken) {
+      // Valider le token pour récupérer les informations utilisateur complètes
+      const validation = await authAPI.validateUserToken(result.accessToken);
       
-      if (!appAuthResult.success) {
-        throw new Error(`ÉCHEC_AUTH_APP: ${appAuthResult.error}`);
+      if (validation.valid && validation.user) {
+        user = {
+          userID: validation.user.userID,
+          username: validation.user.username || credentials.username,
+          email: validation.user.email || credentials.username,
+          profileID: validation.user.profileID,
+          accessibleOrganizations: validation.user.accessibleOrganizations || [],
+          organizations: validation.user.organizations || [],
+          sub: validation.user.sub,
+          roles: validation.user.roles || [],
+          given_name: validation.user.given_name,
+          family_name: validation.user.family_name,
+          state: validation.user.state,
+          email_verified: validation.user.email_verified,
+          attributes: validation.user.attributes
+        };
+      } else {
+        throw new Error('Impossible de récupérer les informations utilisateur');
       }
+    } else {
+      throw new Error('Aucun token d\'accès reçu');
+    }
+
+    // Créer une session partagée
+    const sessionData = SharedSessionManager.createSessionFromAuth({
+      user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    }, 'auth');
+
+    // Mettre à jour le state local
+    dispatch({
+      type: 'SET_TOKENS',
+      payload: {
+        token: result.accessToken,
+        refreshToken: result.refreshToken,
+        sessionId: sessionData.sessionId
+      }
+    });
+    dispatch({ type: 'SET_USER', payload: user });
+    
+    console.log('✅ [AUTH] Session partagée créée avec succès');
+    return { success: true };
+    
+  } catch (error: any) {
+    console.error('❌ [AUTH] Erreur connexion:', error);
+    dispatch({ type: 'SET_ERROR', payload: error.message });
+    return { success: false, error: error.message };
+  } finally {
+    dispatch({ type: 'SET_LOADING', payload: false });
+  }
+}, [testAppAuth]);
+
+  // Redirection vers Dashboard avec transition
+  const redirectToDashboard = useCallback(async (returnUrl: string = '/account') => {
+    try {
+      console.log('🔄 [AUTH] Préparation redirection vers Dashboard...');
       
-      console.log('✅ [AUTH] Authentification app réussie');
+      if (!state.isAuthenticated || !state.user) {
+        throw new Error('Utilisateur non authentifié');
+      }
+
+      // Préparer la transition
+      const transitionToken = SharedSessionManager.prepareTransition('dashboard', returnUrl);
       
-      // Étape 2: Authentification utilisateur via Gateway
-      console.log('🔄 [AUTH] Étape 2: Authentification utilisateur via Gateway...');
-      const result = await authAPI.signIn({
-        username: credentials.username,
-        password: credentials.password
-      });
-
-      console.log('✅ [AUTH] Connexion utilisateur réussie via Gateway');
-
-      // Mettre à jour l'état
-      dispatch({
-        type: 'SET_TOKENS',
-        payload: {
-          token: result.accessToken,
-          refreshToken: result.refreshToken,
-        }
-      });
-
-      // Créer l'objet utilisateur (à adapter selon vos besoins)
-      const user = {
-        userID: 'user-id', // À récupérer depuis la réponse
-        username: credentials.username,
-        email: credentials.username,
-        profileID: 'profile-id',
-        accessibleOrganizations: [],
-        organizations: [],
-        sub: 'user-sub',
-        roles: [],
-      };
-
-      dispatch({ type: 'SET_USER', payload: user });
+      // Construire l'URL de transition
+      const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000';
+      const transitionUrl = new URL('/transition', dashboardUrl);
+      transitionUrl.searchParams.set('returnUrl', returnUrl);
+      transitionUrl.searchParams.set('token', transitionToken);
+      transitionUrl.searchParams.set('from', 'auth');
       
-      console.log('✅ [AUTH] Connexion terminée avec succès via Gateway');
-      return { success: true };
+      console.log('🚀 [AUTH] Redirection vers Dashboard:', transitionUrl.toString());
+      
+      // Rediriger
+      window.location.href = transitionUrl.toString();
       
     } catch (error: any) {
-      console.error('❌ [AUTH] Erreur connexion via Gateway:', error);
+      console.error('❌ [AUTH] Erreur redirection Dashboard:', error);
       dispatch({ type: 'SET_ERROR', payload: error.message });
-      return { success: false, error: error.message };
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [testAppAuth]);
-  // Déconnexion avec la SDK
+  }, [state.isAuthenticated, state.user]);
+
+  // Déconnexion avec nettoyage session partagée
   const logout = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
 
@@ -329,24 +364,92 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.warn('❌ [AUTH] Échec déconnexion SDK:', error);
     } finally {
-      // Nettoyer le stockage local
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('smp_user_0');
-      
-      // Supprimer les cookies standard
-      document.cookie = 'smp_user_0=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-      
-      // Nettoyer tous les cookies d'authentification
-      CookieManager.clearAllAuthCookies();
-      
+      // Nettoyer la session partagée
+      SharedSessionManager.clearSession();
       dispatch({ type: 'CLEAR_AUTH' });
       
       console.log('✅ [AUTH] Déconnexion terminée');
     }
   }, []);
 
-  // Rafraîchissement de token
+  // Connexion avec Magic Link (avec session partagée)
+  const loginWithMagicLink = useCallback(async (token: string) => {
+  dispatch({ type: 'SET_LOADING', payload: true });
+  dispatch({ type: 'SET_ERROR', payload: null });
+
+  try {
+    const result = await smpClient.magicLink.verify({ token });
+    
+    if (result.success && result.accessToken && result.user) {
+      // CORRECTION : Validation du token pour récupérer les données complètes
+      const validation = await authAPI.validateUserToken(result.accessToken);
+      
+      let user: User;
+      if (validation.valid && validation.user) {
+        user = {
+          userID: validation.user.userID,
+          username: validation.user.username || validation.user.email,
+          email: validation.user.email,
+          profileID: validation.user.profileID,
+          accessibleOrganizations: validation.user.accessibleOrganizations || [],
+          organizations: validation.user.organizations || [],
+          sub: validation.user.sub,
+          roles: validation.user.roles || [],
+          given_name: validation.user.given_name,
+          family_name: validation.user.family_name,
+          state: validation.user.state,
+          email_verified: validation.user.email_verified,
+          attributes: validation.user.attributes
+        };
+      } else {
+        // Fallback avec les données du Magic Link
+        user = {
+          userID: result.user.sub || result.user.userID || 'temp-user-id',
+          username: result.user.preferred_username || result.user.username || result.user.email,
+          email: result.user.email,
+          profileID: result.user.profileID || result.user.sub || 'temp-profile-id',
+          accessibleOrganizations: result.user.organization_ids || [],
+          sub: result.user.sub || 'temp-sub',
+          roles: result.user.roles || [],
+          organizations: result.user.organization_ids || []
+        };
+      }
+
+      // Créer session partagée
+      const sessionData = SharedSessionManager.createSessionFromAuth({
+        user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      }, 'auth');
+
+      dispatch({
+        type: 'SET_TOKENS',
+        payload: {
+          token: result.accessToken,
+          refreshToken: result.refreshToken,
+          sessionId: sessionData.sessionId
+        }
+      });
+      dispatch({ type: 'SET_USER', payload: user });
+      dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
+      
+      return { success: true };
+    } else {
+      const errorMessage = result.message || 'Échec de la connexion Magic Link';
+      dispatch({ type: 'SET_ERROR', payload: errorMessage });
+      return { success: false, error: errorMessage };
+    }
+  } catch (error: any) {
+    const errorMessage = error.message || 'Erreur de connexion Magic Link';
+    dispatch({ type: 'SET_ERROR', payload: errorMessage });
+    return { success: false, error: errorMessage };
+  } finally {
+    dispatch({ type: 'SET_LOADING', payload: false });
+  }
+}, []);
+
+
+  // Rafraîchissement de token avec mise à jour session partagée
   const refreshToken = useCallback(async (): Promise<boolean> => {
     if (state.isRefreshing) {
       return false;
@@ -358,10 +461,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const newAccessToken = await smpClient.getUserAccessToken();
       
       if (newAccessToken) {
-        localStorage.setItem('access_token', newAccessToken);
-        
-        // Mettre à jour les cookies
-        CookieManager.setUserToken(newAccessToken);
+        // Mettre à jour la session partagée
+        const currentSession = SharedSessionManager.getSession();
+        if (currentSession) {
+          currentSession.tokens.accessToken = newAccessToken;
+          currentSession.lastActivity = new Date().toISOString();
+          SharedSessionManager.storeSession(currentSession);
+        }
         
         dispatch({
           type: 'SET_TOKENS',
@@ -386,13 +492,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Obtenir l'utilisateur actuel
   const getCurrentUser = useCallback(async () => {
     try {
-      const storedUser = localStorage.getItem('smp_user_0');
-      if (storedUser) {
-        const user = JSON.parse(storedUser);
-        dispatch({ type: 'SET_USER', payload: user });
+      const currentSession = SharedSessionManager.getSession();
+      if (currentSession?.user) {
+        dispatch({ type: 'SET_USER', payload: currentSession.user });
       }
     } catch (error: any) {
-      console.error( error);
+      console.error('❌ [AUTH] Erreur getCurrentUser:', error);
       dispatch({ type: 'SET_ERROR', payload: 'Erreur lors de la récupération des informations utilisateur' });
     }
   }, []);
@@ -400,79 +505,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Validation de session
   const validateSession = useCallback(async (): Promise<boolean> => {
     try {
-      const token = localStorage.getItem('access_token');
-      if (!token) {
+      const currentSession = SharedSessionManager.getSession();
+      if (!currentSession || !SharedSessionManager.isSessionValid(currentSession)) {
         dispatch({ type: 'CLEAR_AUTH' });
         return false;
       }
 
+      // Mettre à jour l'activité
+      SharedSessionManager.updateActivity();
       dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
       return true;
     } catch (error) {
-      console.error('Session validation failed:', error);
+      console.error('❌ [AUTH] Erreur validation session:', error);
       dispatch({ type: 'CLEAR_AUTH' });
       return false;
-    }
-  }, []);
-
-  // Connexion avec Magic Link
-  const loginWithMagicLink = useCallback(async (token: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    dispatch({ type: 'SET_ERROR', payload: null });
-
-    try {
-      const result = await smpClient.magicLink.verify({ token });
-      
-      if (result.success) {
-        if (result.accessToken) {
-          localStorage.setItem('access_token', result.accessToken);
-          if (result.refreshToken) {
-            localStorage.setItem('refresh_token', result.refreshToken);
-          }
-
-          dispatch({
-            type: 'SET_TOKENS',
-            payload: {
-              token: result.accessToken,
-              refreshToken: result.refreshToken,
-            }
-          });
-        }
-
-        if (result.user) {
-          const user = {
-            userID: result.user.sub || result.user.userID,
-            username: result.user.preferred_username || result.user.username,
-            email: result.user.email,
-            profileID: result.user.profileID || result.user.sub,
-            accessibleOrganizations: result.user.organization_ids || [],
-            sub: result.user.sub,
-            roles: result.user.roles || [],
-          };
-
-          dispatch({ type: 'SET_USER', payload: user });
-          
-          const cookieString = JSON.stringify(user);
-          localStorage.setItem("smp_user_0", cookieString);
-          
-          const cookieValue = encodeURIComponent(cookieString);
-          const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-          document.cookie = `smp_user_0=${cookieValue}; path=/; max-age=604800; SameSite=Lax${isSecure ? '; Secure' : ''}`;
-        }
-        
-        dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
-        return { success: true };
-      } else {
-        const errorMessage = result.message || 'Échec de la connexion Magic Link';
-        dispatch({ type: 'SET_ERROR', payload: errorMessage });
-        return { success: false, error: errorMessage };
-      }
-    } catch (error: any) {
-      const errorMessage = error.message || 'Erreur de connexion Magic Link';
-      dispatch({ type: 'SET_ERROR', payload: errorMessage });
-      return { success: false, error: errorMessage };
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, []);
 
@@ -535,7 +581,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const isTokenExpiringSoon = useCallback((): boolean => {
-    return false;
+    const currentSession = SharedSessionManager.getSession();
+    if (!currentSession) return false;
+    
+    const now = new Date();
+    const expiresAt = new Date(currentSession.expiresAt);
+    const timeUntilExpiry = expiresAt.getTime() - now.getTime();
+    
+    // Considérer comme "expirant" si moins de 5 minutes restantes
+    return timeUntilExpiry <= 5 * 60 * 1000;
   }, []);
 
   const publicState: AuthState = {
@@ -562,17 +616,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearError,
     isTokenExpiringSoon,
 
-    // Debug methods
+    // Transition methods
+    redirectToDashboard,
     testAppAuth,
-    getAppToken,
 
     loginWithMagicLink,
     requestMagicLink,
     requestPasswordReset,
     resetPassword,
-    getSharedTokens: function (): ReturnType<typeof SessionBridge.getSharedTokens> {
-      throw new Error('Function not implemented.');
-    }
   };
 
   return React.createElement(

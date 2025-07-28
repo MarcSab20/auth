@@ -1,6 +1,4 @@
-// dashboard/src/lib/SharedSessionManager.ts
-import { AUTH_CONFIG } from '@/src/config/auth.config';
-
+// shared/lib/SharedSessionManager.ts
 export interface SessionData {
   user: {
     userID: string;
@@ -15,6 +13,7 @@ export interface SessionData {
     family_name?: string;
     state?: string;
     email_verified?: boolean;
+    attributes?: any;
   };
   tokens: {
     accessToken: string;
@@ -24,31 +23,30 @@ export interface SessionData {
   sessionId: string;
   expiresAt: string;
   lastActivity: string;
+  source: 'auth' | 'dashboard';
 }
 
 export class SharedSessionManager {
   private static readonly STORAGE_KEYS = {
     ACCESS_TOKEN: 'access_token',
     REFRESH_TOKEN: 'refresh_token',
-    APP_TOKEN: 'smp_app_access_token',
     USER_DATA: 'smp_user_0',
     SESSION_ID: 'smp_session_id',
     LAST_ACTIVITY: 'smp_last_activity',
+    SESSION_SOURCE: 'smp_session_source',
+    TRANSITION_DATA: 'smp_transition_data'
   };
 
-  private static readonly COOKIE_KEYS = {
-    USER_TOKEN: AUTH_CONFIG.COOKIES.USER_TOKEN,
-    USER_REFRESH: AUTH_CONFIG.COOKIES.USER_REFRESH,
-    APP_TOKEN: AUTH_CONFIG.COOKIES.APP_TOKEN,
-    SESSION_ID: AUTH_CONFIG.COOKIES.SESSION_ID,
-  };
+  private static readonly COOKIE_DOMAIN = process.env.NODE_ENV === 'production' ? '.services.com' : 'localhost';
+  private static readonly COOKIE_SECURE = process.env.NODE_ENV === 'production';
+  private static readonly SESSION_DURATION = 8 * 60 * 60 * 1000; // 8 heures
 
   /**
-   * Stocker une session complète (localStorage + cookies)
+   * Stocker une session complète (localStorage + cookies cross-domain)
    */
   static storeSession(sessionData: SessionData): void {
     try {
-      console.log('🔐 [SESSION-MANAGER] Stockage session complète...');
+      console.log('🔐 [SESSION-MANAGER] Stockage session cross-app...', sessionData.source);
 
       // 1. Stocker dans localStorage
       localStorage.setItem(this.STORAGE_KEYS.ACCESS_TOKEN, sessionData.tokens.accessToken);
@@ -56,57 +54,30 @@ export class SharedSessionManager {
       if (sessionData.tokens.refreshToken) {
         localStorage.setItem(this.STORAGE_KEYS.REFRESH_TOKEN, sessionData.tokens.refreshToken);
       }
-      
-      if (sessionData.tokens.appToken) {
-        localStorage.setItem(this.STORAGE_KEYS.APP_TOKEN, sessionData.tokens.appToken);
-      }
 
       localStorage.setItem(this.STORAGE_KEYS.USER_DATA, JSON.stringify(sessionData.user));
       localStorage.setItem(this.STORAGE_KEYS.SESSION_ID, sessionData.sessionId);
       localStorage.setItem(this.STORAGE_KEYS.LAST_ACTIVITY, sessionData.lastActivity);
+      localStorage.setItem(this.STORAGE_KEYS.SESSION_SOURCE, sessionData.source);
 
-      // 2. Stocker dans les cookies pour partage cross-domain
-      this.setCookie(this.COOKIE_KEYS.USER_TOKEN, sessionData.tokens.accessToken, {
-        httpOnly: false, // Accessible par JS pour le partage
-        maxAge: AUTH_CONFIG.COOKIES.MAX_AGE,
-        sameSite: 'lax',
-        secure: AUTH_CONFIG.COOKIES.SECURE,
-        domain: AUTH_CONFIG.COOKIES.DOMAIN
-      });
-
+      // 2. Stocker dans cookies cross-domain
+      this.setCrossDomainCookie('smp_user_token', sessionData.tokens.accessToken);
+      
       if (sessionData.tokens.refreshToken) {
-        this.setCookie(this.COOKIE_KEYS.USER_REFRESH, sessionData.tokens.refreshToken, {
-          httpOnly: false,
-          maxAge: AUTH_CONFIG.COOKIES.MAX_AGE,
-          sameSite: 'lax',
-          secure: AUTH_CONFIG.COOKIES.SECURE,
-          domain: AUTH_CONFIG.COOKIES.DOMAIN
-        });
+        this.setCrossDomainCookie('smp_user_refresh', sessionData.tokens.refreshToken);
       }
+      
+      this.setCrossDomainCookie('smp_session_id', sessionData.sessionId);
 
-      if (sessionData.tokens.appToken) {
-        this.setCookie(this.COOKIE_KEYS.APP_TOKEN, sessionData.tokens.appToken, {
-          httpOnly: false,
-          maxAge: AUTH_CONFIG.COOKIES.MAX_AGE,
-          sameSite: 'lax',
-          secure: AUTH_CONFIG.COOKIES.SECURE,
-          domain: AUTH_CONFIG.COOKIES.DOMAIN
-        });
-      }
-
-      this.setCookie(this.COOKIE_KEYS.SESSION_ID, sessionData.sessionId, {
-        httpOnly: false,
-        maxAge: AUTH_CONFIG.COOKIES.MAX_AGE,
-        sameSite: 'lax',
-        secure: AUTH_CONFIG.COOKIES.SECURE,
-        domain: AUTH_CONFIG.COOKIES.DOMAIN
-      });
-
-      // 3. Cookie user classique pour compatibilité serveur
+      // 3. Cookie user standard pour compatibilité serveur
       const userCookieValue = encodeURIComponent(JSON.stringify(sessionData.user));
-      document.cookie = `smp_user_0=${userCookieValue}; path=/; max-age=${AUTH_CONFIG.COOKIES.MAX_AGE}; SameSite=Lax${AUTH_CONFIG.COOKIES.SECURE ? '; Secure' : ''}${AUTH_CONFIG.COOKIES.DOMAIN ? `; Domain=${AUTH_CONFIG.COOKIES.DOMAIN}` : ''}`;
+      this.setCrossDomainCookie('smp_user_0', userCookieValue);
 
-      console.log('✅ [SESSION-MANAGER] Session stockée avec succès');
+      // 4. Déclencher l'événement de changement de session
+      this.broadcastSessionChange(sessionData);
+
+      console.log('✅ [SESSION-MANAGER] Session cross-app stockée avec succès');
+
     } catch (error) {
       console.error('❌ [SESSION-MANAGER] Erreur stockage session:', error);
       throw error;
@@ -118,23 +89,18 @@ export class SharedSessionManager {
    */
   static getSession(): SessionData | null {
     try {
-      console.log('🔍 [SESSION-MANAGER] Récupération session...');
-
-      // Vérifier localStorage d'abord
       const accessToken = localStorage.getItem(this.STORAGE_KEYS.ACCESS_TOKEN);
       const userDataStr = localStorage.getItem(this.STORAGE_KEYS.USER_DATA);
       const sessionId = localStorage.getItem(this.STORAGE_KEYS.SESSION_ID);
+      const source = localStorage.getItem(this.STORAGE_KEYS.SESSION_SOURCE) as 'auth' | 'dashboard' || 'auth';
 
       if (!accessToken || !userDataStr || !sessionId) {
-        console.log('ℹ️ [SESSION-MANAGER] Session incomplète dans localStorage');
-        
-        // Fallback: essayer les cookies
-        return this.getSessionFromCookies();
+        console.log('ℹ️ [SESSION-MANAGER] Session incomplète');
+        return null;
       }
 
       const userData = JSON.parse(userDataStr);
       const refreshToken = localStorage.getItem(this.STORAGE_KEYS.REFRESH_TOKEN);
-      const appToken = localStorage.getItem(this.STORAGE_KEYS.APP_TOKEN);
       const lastActivity = localStorage.getItem(this.STORAGE_KEYS.LAST_ACTIVITY) || new Date().toISOString();
 
       const sessionData: SessionData = {
@@ -142,97 +108,26 @@ export class SharedSessionManager {
         tokens: {
           accessToken,
           refreshToken: refreshToken || undefined,
-          appToken: appToken || undefined,
         },
         sessionId,
-        expiresAt: new Date(Date.now() + AUTH_CONFIG.USER_ACCESS_DURATION).toISOString(),
+        expiresAt: new Date(Date.now() + this.SESSION_DURATION).toISOString(),
         lastActivity,
+        source
       };
 
-      console.log('✅ [SESSION-MANAGER] Session récupérée depuis localStorage');
+      // Vérifier si la session n'est pas expirée
+      if (!this.isSessionValid(sessionData)) {
+        console.log('⏰ [SESSION-MANAGER] Session expirée');
+        this.clearSession();
+        return null;
+      }
+
       return sessionData;
 
     } catch (error) {
       console.error('❌ [SESSION-MANAGER] Erreur récupération session:', error);
       return null;
     }
-  }
-
-  /**
-   * Récupérer session depuis les cookies (fallback)
-   */
-  private static getSessionFromCookies(): SessionData | null {
-    try {
-      console.log('🔍 [SESSION-MANAGER] Tentative récupération depuis cookies...');
-
-      const accessToken = this.getCookie(this.COOKIE_KEYS.USER_TOKEN);
-      const sessionId = this.getCookie(this.COOKIE_KEYS.SESSION_ID);
-      const userCookie = this.getCookie('smp_user_0');
-
-      if (!accessToken || !sessionId || !userCookie) {
-        console.log('ℹ️ [SESSION-MANAGER] Session incomplète dans cookies');
-        return null;
-      }
-
-      const userData = JSON.parse(decodeURIComponent(userCookie));
-      const refreshToken = this.getCookie(this.COOKIE_KEYS.USER_REFRESH);
-      const appToken = this.getCookie(this.COOKIE_KEYS.APP_TOKEN);
-
-      const sessionData: SessionData = {
-        user: userData,
-        tokens: {
-          accessToken,
-          refreshToken: refreshToken || undefined,
-          appToken: appToken || undefined,
-        },
-        sessionId,
-        expiresAt: new Date(Date.now() + AUTH_CONFIG.USER_ACCESS_DURATION).toISOString(),
-        lastActivity: new Date().toISOString(),
-      };
-
-      console.log('✅ [SESSION-MANAGER] Session récupérée depuis cookies');
-      
-      // Synchroniser vers localStorage
-      this.syncToLocalStorage(sessionData);
-      
-      return sessionData;
-
-    } catch (error) {
-      console.error('❌ [SESSION-MANAGER] Erreur récupération cookies:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Synchroniser session vers localStorage
-   */
-  private static syncToLocalStorage(sessionData: SessionData): void {
-    try {
-      localStorage.setItem(this.STORAGE_KEYS.ACCESS_TOKEN, sessionData.tokens.accessToken);
-      localStorage.setItem(this.STORAGE_KEYS.USER_DATA, JSON.stringify(sessionData.user));
-      localStorage.setItem(this.STORAGE_KEYS.SESSION_ID, sessionData.sessionId);
-      localStorage.setItem(this.STORAGE_KEYS.LAST_ACTIVITY, sessionData.lastActivity);
-
-      if (sessionData.tokens.refreshToken) {
-        localStorage.setItem(this.STORAGE_KEYS.REFRESH_TOKEN, sessionData.tokens.refreshToken);
-      }
-
-      if (sessionData.tokens.appToken) {
-        localStorage.setItem(this.STORAGE_KEYS.APP_TOKEN, sessionData.tokens.appToken);
-      }
-
-      console.log('✅ [SESSION-MANAGER] Session synchronisée vers localStorage');
-    } catch (error) {
-      console.warn('⚠️ [SESSION-MANAGER] Erreur sync localStorage:', error);
-    }
-  }
-
-  /**
-   * Mettre à jour l'activité de session
-   */
-  static updateActivity(): void {
-    const now = new Date().toISOString();
-    localStorage.setItem(this.STORAGE_KEYS.LAST_ACTIVITY, now);
   }
 
   /**
@@ -249,8 +144,8 @@ export class SharedSessionManager {
       return false;
     }
 
-    // Vérifier inactivité (30 minutes)
-    const inactivityLimit = 30 * 60 * 1000; // 30 minutes
+    // Vérifier inactivité (2 heures)
+    const inactivityLimit = 2 * 60 * 60 * 1000; // 2 heures
     if (now.getTime() - lastActivity.getTime() > inactivityLimit) {
       console.log('⏰ [SESSION-MANAGER] Session inactive trop longtemps');
       return false;
@@ -260,24 +155,40 @@ export class SharedSessionManager {
   }
 
   /**
+   * Mettre à jour l'activité de session
+   */
+  static updateActivity(): void {
+    const now = new Date().toISOString();
+    localStorage.setItem(this.STORAGE_KEYS.LAST_ACTIVITY, now);
+    
+    // Mettre à jour aussi dans la session complète
+    const currentSession = this.getSession();
+    if (currentSession) {
+      currentSession.lastActivity = now;
+      this.storeSession(currentSession);
+    }
+  }
+
+  /**
    * Nettoyer complètement la session
    */
   static clearSession(): void {
     try {
-      console.log('🧹 [SESSION-MANAGER] Nettoyage session complète...');
+      console.log('🧹 [SESSION-MANAGER] Nettoyage session cross-app...');
 
       // Nettoyer localStorage
       Object.values(this.STORAGE_KEYS).forEach(key => {
         localStorage.removeItem(key);
       });
 
-      // Nettoyer cookies
-      Object.values(this.COOKIE_KEYS).forEach(cookieName => {
-        this.removeCookie(cookieName);
-      });
-
-      // Nettoyer cookie user classique
+      // Nettoyer cookies cross-domain
+      this.removeCookie('smp_user_token');
+      this.removeCookie('smp_user_refresh');
+      this.removeCookie('smp_session_id');
       this.removeCookie('smp_user_0');
+
+      // Diffuser la déconnexion
+      this.broadcastSessionChange(null);
 
       console.log('✅ [SESSION-MANAGER] Session nettoyée');
     } catch (error) {
@@ -286,7 +197,115 @@ export class SharedSessionManager {
   }
 
   /**
-   * Détecter changement de session (cross-tab)
+   * Créer une session à partir d'une authentification
+   */
+  static createSessionFromAuth(authData: {
+    user: any;
+    accessToken: string;
+    refreshToken?: string;
+  }, source: 'auth' | 'dashboard'): SessionData {
+    
+    const sessionData: SessionData = {
+      user: authData.user,
+      tokens: {
+        accessToken: authData.accessToken,
+        refreshToken: authData.refreshToken,
+      },
+      sessionId: this.generateSessionId(),
+      expiresAt: new Date(Date.now() + this.SESSION_DURATION).toISOString(),
+      lastActivity: new Date().toISOString(),
+      source
+    };
+
+    this.storeSession(sessionData);
+    return sessionData;
+  }
+
+  /**
+   * Préparer la transition entre applications
+   */
+  static prepareTransition(targetApp: 'auth' | 'dashboard', returnUrl?: string): string {
+    const currentSession = this.getSession();
+    
+    if (!currentSession) {
+      throw new Error('Aucune session active pour la transition');
+    }
+
+    const transitionData = {
+      sessionId: currentSession.sessionId,
+      targetApp,
+      returnUrl,
+      timestamp: Date.now(),
+      fromApp: currentSession.source
+    };
+
+    localStorage.setItem(this.STORAGE_KEYS.TRANSITION_DATA, JSON.stringify(transitionData));
+    
+    // Créer un token de transition temporaire (5 minutes)
+    const transitionToken = this.generateTransitionToken();
+    this.setCrossDomainCookie('smp_transition_token', transitionToken, { maxAge: 300 });
+
+    return transitionToken;
+  }
+
+  /**
+   * Finaliser la transition
+   */
+  static completeTransition(): SessionData | null {
+    try {
+      const transitionDataStr = localStorage.getItem(this.STORAGE_KEYS.TRANSITION_DATA);
+      const transitionToken = this.getCookie('smp_transition_token');
+
+      if (!transitionDataStr || !transitionToken) {
+        console.log('ℹ️ [SESSION-MANAGER] Aucune transition en cours');
+        return this.getSession(); // Retourner la session normale
+      }
+
+      const transitionData = JSON.parse(transitionDataStr);
+      
+      // Vérifier que la transition n'est pas expirée (5 minutes)
+      const transitionAge = Date.now() - transitionData.timestamp;
+      if (transitionAge > 5 * 60 * 1000) {
+        console.log('⏰ [SESSION-MANAGER] Transition expirée');
+        this.cleanupTransition();
+        return this.getSession();
+      }
+
+      // Récupérer la session actuelle
+      const currentSession = this.getSession();
+      if (!currentSession) {
+        console.log('❌ [SESSION-MANAGER] Aucune session pour la transition');
+        this.cleanupTransition();
+        return null;
+      }
+
+      // Mettre à jour la source de la session
+      currentSession.source = transitionData.targetApp;
+      this.storeSession(currentSession);
+
+      // Nettoyer les données de transition
+      this.cleanupTransition();
+
+      console.log('✅ [SESSION-MANAGER] Transition complétée');
+      return currentSession;
+
+    } catch (error) {
+      console.error('❌ [SESSION-MANAGER] Erreur transition:', error);
+      this.cleanupTransition();
+      return this.getSession();
+    }
+  }
+
+  /**
+   * Nettoyer les données de transition
+   */
+  private static cleanupTransition(): void {
+    localStorage.removeItem(this.STORAGE_KEYS.TRANSITION_DATA);
+    this.removeCookie('smp_transition_token');
+  }
+
+  /**
+   * Écouter les changements de session (cross-tab)
    */
   static onSessionChange(callback: (sessionData: SessionData | null) => void): () => void {
     const handleStorageChange = (e: StorageEvent) => {
@@ -297,47 +316,56 @@ export class SharedSessionManager {
       }
     };
 
+    const handleCustomEvent = (e: CustomEvent) => {
+      console.log('🔄 [SESSION-MANAGER] Événement session reçu');
+      callback(e.detail);
+    };
+
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('smp-session-change', handleCustomEvent as EventListener);
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('smp-session-change', handleCustomEvent as EventListener);
     };
   }
 
   /**
-   * Créer un ID de session unique
+   * Diffuser les changements de session
    */
+  private static broadcastSessionChange(sessionData: SessionData | null): void {
+    const event = new CustomEvent('smp-session-change', {
+      detail: sessionData
+    });
+    window.dispatchEvent(event);
+  }
+
+  // Utilitaires
   static generateSessionId(): string {
     return `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  // Utilitaires cookies
-  private static setCookie(name: string, value: string, options: {
-    httpOnly?: boolean;
-    maxAge?: number;
-    sameSite?: 'strict' | 'lax' | 'none';
-    secure?: boolean;
-    domain?: string;
-  }): void {
+  private static generateTransitionToken(): string {
+    return `trans_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private static setCrossDomainCookie(
+    name: string, 
+    value: string, 
+    options: { maxAge?: number } = {}
+  ): void {
     if (typeof document === 'undefined') return;
 
+    const maxAge = options.maxAge || 7 * 24 * 60 * 60; // 7 jours par défaut
+    
     let cookieString = `${name}=${encodeURIComponent(value)}`;
     cookieString += `; Path=/`;
+    cookieString += `; Domain=${this.COOKIE_DOMAIN}`;
+    cookieString += `; Max-Age=${maxAge}`;
+    cookieString += `; SameSite=Lax`;
     
-    if (options.domain) {
-      cookieString += `; Domain=${options.domain}`;
-    }
-    
-    if (options.maxAge) {
-      cookieString += `; Max-Age=${options.maxAge}`;
-    }
-    
-    if (options.secure) {
+    if (this.COOKIE_SECURE) {
       cookieString += `; Secure`;
-    }
-    
-    if (options.sameSite) {
-      cookieString += `; SameSite=${options.sameSite}`;
     }
 
     document.cookie = cookieString;
@@ -358,6 +386,6 @@ export class SharedSessionManager {
   }
 
   private static removeCookie(name: string): void {
-    this.setCookie(name, '', { maxAge: 0 });
+    this.setCrossDomainCookie(name, '', { maxAge: 0 });
   }
 }

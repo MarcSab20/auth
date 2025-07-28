@@ -6,6 +6,8 @@ import { useMagicLink } from "@/context/magicLinkContext";
 import Link from "next/link";
 import { Button } from '@/src/components/landing-page/Button';
 import { useSearchParams } from "next/navigation";
+import { PostLoginRedirect } from "@/src/components/auth/RedirectToDashboard";
+import { RedirectToDashboard } from "@/src/components/auth/RedirectToDashboard";
 
 export default function SignInForm() {
   const { state, login, clearError, requestMagicLink } = useAuth();
@@ -240,6 +242,35 @@ export default function SignInForm() {
                 "Se connecter"
               )}
             </Button>
+            {/* Bouton de redirection vers Dashboard si connecté */}
+            {state.isAuthenticated && state.user && (
+              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                      <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-green-900">
+                        Connexion réussie !
+                      </p>
+                      <p className="text-xs text-green-700">
+                        Bienvenue {state.user.username}
+                      </p>
+                    </div>
+                  </div>
+                  <RedirectToDashboard
+                    returnUrl="/account"
+                    size="sm"
+                    className="whitespace-nowrap"
+                  >
+                    Accéder au Dashboard
+                  </RedirectToDashboard>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-6 text-center">
@@ -406,6 +437,8 @@ export default function SignInForm() {
       )}
       
       <div className="mt-8 text-center text-sm text-gray-700 border-t pt-6">
+        {/* Redirection automatique après connexion réussie */}
+        <PostLoginRedirect />
         Pas encore inscrit ?
         <Link href="/signup" className="text-blue-500 underline ml-1 hover:no-underline">
           Créer un compte

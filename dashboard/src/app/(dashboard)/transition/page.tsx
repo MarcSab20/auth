@@ -1,4 +1,4 @@
-// dashboard/src/app/transition/page.tsx
+// dashboard/src/app/(dashboard)/transition/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -7,7 +7,7 @@ import { useAuth } from '@/context/authenticationContext';
 import { SharedSessionManager } from '@/src/lib/SharedSessionManager';
 
 interface TransitionState {
-  status: 'loading' | 'validating' | 'authenticated' | 'redirecting' | 'error';
+  status: 'checking' | 'authenticated' | 'redirecting' | 'error';
   message: string;
   countdown: number;
   error?: string;
@@ -16,34 +16,50 @@ interface TransitionState {
 export default function TransitionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state } = useAuth();
+  const { state, testAppAuth } = useAuth();
   
   const [transitionState, setTransitionState] = useState<TransitionState>({
-    status: 'loading',
-    message: 'Initialisation de la transition...',
+    status: 'checking',
+    message: 'Vérification de la session...',
     countdown: 0,
   });
 
   const returnUrl = searchParams.get('returnUrl') || '/account';
-  const fromApp = searchParams.get('from') || 'auth';
   const transitionToken = searchParams.get('token');
+  const fromApp = searchParams.get('from');
 
   useEffect(() => {
     const handleTransition = async () => {
       try {
-        console.log('🔄 [DASHBOARD-TRANSITION] Démarrage transition depuis', fromApp);
-        
+        console.log('🔄 [DASHBOARD-TRANSITION] Démarrage transition...', {
+          returnUrl,
+          fromApp,
+          hasToken: !!transitionToken
+        });
+
+        // Étape 1: Authentifier l'app Dashboard
         setTransitionState({
-          status: 'validating',
-          message: 'Validation de la session...',
+          status: 'checking',
+          message: 'Authentification de l\'application Dashboard...',
           countdown: 0,
         });
 
-        // 1. Finaliser la transition avec SharedSessionManager
+        const appAuthResult = await testAppAuth();
+        if (!appAuthResult.success) {
+          throw new Error(`Authentification app Dashboard échouée: ${appAuthResult.error}`);
+        }
+
+        // Étape 2: Finaliser la transition
+        setTransitionState({
+          status: 'checking',
+          message: 'Récupération de la session utilisateur...',
+          countdown: 0,
+        });
+
         const sessionData = SharedSessionManager.completeTransition();
         
-        if (!sessionData) {
-          throw new Error('Aucune session valide trouvée pour la transition');
+        if (!sessionData || !SharedSessionManager.isSessionValid(sessionData)) {
+          throw new Error('Session invalide ou expirée');
         }
 
         console.log('✅ [DASHBOARD-TRANSITION] Session récupérée:', {
@@ -51,33 +67,24 @@ export default function TransitionPage() {
           source: sessionData.source
         });
 
+        // Étape 3: Attendre que le contexte auth soit mis à jour
         setTransitionState({
           status: 'authenticated',
-          message: 'Session validée avec succès !',
+          message: 'Session validée, préparation de la redirection...',
           countdown: 0,
         });
 
-        // 2. Attendre que le contexte d'authentification soit prêt
-        await new Promise(resolve => {
-          const checkAuth = () => {
-            if (state.isAuthenticated && state.user) {
-              resolve(true);
-            } else {
-              setTimeout(checkAuth, 100);
-            }
-          };
-          checkAuth();
-        });
+        // Petite attente pour laisser le contexte se mettre à jour
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-        console.log('✅ [DASHBOARD-TRANSITION] Contexte d\'authentification prêt');
-        
+        // Étape 4: Redirection
         setTransitionState({
           status: 'redirecting',
-          message: 'Redirection vers le Dashboard...',
+          message: 'Redirection vers le tableau de bord...',
           countdown: 3,
         });
 
-        // 3. Compte à rebours de redirection
+        // Compte à rebours de redirection
         let countdown = 3;
         const countdownInterval = setInterval(() => {
           countdown -= 1;
@@ -105,21 +112,25 @@ export default function TransitionPage() {
       }
     };
 
-    handleTransition();
-  }, [fromApp, returnUrl, router, state.isAuthenticated, state.user]);
+    // Démarrer la transition après un petit délai
+    const timeout = setTimeout(handleTransition, 500);
+    
+    return () => clearTimeout(timeout);
+  }, [testAppAuth, returnUrl, transitionToken, fromApp, router]);
 
   const handleManualRedirect = () => {
+    console.log('🚀 [DASHBOARD-TRANSITION] Redirection manuelle vers:', returnUrl);
     router.push(returnUrl);
   };
 
-  const handleRetryTransition = () => {
-    window.location.reload();
+  const handleRetryAuth = () => {
+    const authUrl = process.env.NEXT_PUBLIC_AUTH_URL || 'http://localhost:3001';
+    window.location.href = `${authUrl}/signin?returnUrl=${encodeURIComponent(returnUrl)}`;
   };
 
   const getStatusIcon = () => {
     switch (transitionState.status) {
-      case 'loading':
-      case 'validating':
+      case 'checking':
         return (
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto">
           </div>
@@ -153,16 +164,14 @@ export default function TransitionPage() {
 
   const getStatusTitle = () => {
     switch (transitionState.status) {
-      case 'loading':
-        return 'Chargement...';
-      case 'validating':
-        return 'Validation en cours...';
+      case 'checking':
+        return 'Connexion en cours...';
       case 'authenticated':
-        return 'Session validée !';
+        return 'Connexion réussie !';
       case 'redirecting':
-        return 'Redirection...';
+        return 'Redirection en cours...';
       case 'error':
-        return 'Erreur de transition';
+        return 'Erreur de connexion';
     }
   };
 
@@ -185,14 +194,24 @@ export default function TransitionPage() {
             {transitionState.message}
           </p>
 
-          {/* Informations utilisateur (si disponible) */}
-          {state.user && transitionState.status !== 'error' && (
+          {/* Informations de transition */}
+          {fromApp && (
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="text-sm text-blue-900">
+                <p><strong>Provenance:</strong> Application {fromApp}</p>
+                <p><strong>Destination:</strong> {returnUrl}</p>
+                <p><strong>Type:</strong> Transition sécurisée</p>
+              </div>
+            </div>
+          )}
+
+          {/* Informations utilisateur si disponible */}
+          {state.user && transitionState.status !== 'error' && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="text-sm text-green-900">
                 <p><strong>Utilisateur:</strong> {state.user.username}</p>
                 <p><strong>Email:</strong> {state.user.email}</p>
-                <p><strong>Destination:</strong> {returnUrl}</p>
-                <p><strong>Source:</strong> Application {fromApp}</p>
+                <p><strong>Organisations:</strong> {state.user.accessibleOrganizations?.length || 0}</p>
               </div>
             </div>
           )}
@@ -211,7 +230,7 @@ export default function TransitionPage() {
                       <p className="text-sm font-medium text-red-900">
                         Détail de l'erreur
                       </p>
-                      <p className="text-xs text-red-700 mt-1">
+                      <p className="text-xs text-red-700 mt-1 font-mono bg-red-100 p-2 rounded">
                         {transitionState.error}
                       </p>
                     </div>
@@ -219,7 +238,7 @@ export default function TransitionPage() {
                 </div>
               )}
 
-              {/* Boutons d'action */}
+              {/* Boutons d'action pour les erreurs */}
               <div className="space-y-3">
                 <button
                   onClick={handleManualRedirect}
@@ -228,24 +247,24 @@ export default function TransitionPage() {
                   <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
-                  Continuer manuellement
+                  Continuer vers le Dashboard
                 </button>
                 
                 <button
-                  onClick={handleRetryTransition}
+                  onClick={handleRetryAuth}
                   className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
                 >
                   <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Réessayer la transition
+                  Retourner à la connexion
                 </button>
               </div>
             </div>
           )}
 
-          {/* Action manuelle pour la redirection */}
-          {(transitionState.status === 'redirecting' || transitionState.status === 'authenticated') && (
+          {/* Action manuelle pour la redirection (si pas d'erreur) */}
+          {transitionState.status === 'redirecting' && (
             <div className="mt-6">
               <button
                 onClick={handleManualRedirect}
@@ -260,24 +279,26 @@ export default function TransitionPage() {
           )}
 
           {/* Informations de sécurité */}
-          <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="text-left space-y-2">
-              <h3 className="text-sm font-medium text-gray-900 flex items-center">
-                <svg className="h-4 w-4 mr-2 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Transition sécurisée
-              </h3>
-              <ul className="text-xs text-gray-600 space-y-1">
-                <li>• Session chiffrée et vérifiée</li>
-                <li>• Transfert sécurisé entre applications</li>
-                <li>• Authentification maintenue</li>
-                <li>• Données utilisateur préservées</li>
-              </ul>
+          {transitionState.status !== 'error' && (
+            <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="text-left space-y-2">
+                <h3 className="text-sm font-medium text-gray-900 flex items-center">
+                  <svg className="h-4 w-4 mr-2 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Transition sécurisée
+                </h3>
+                <ul className="text-xs text-gray-600 space-y-1">
+                  <li>• Session chiffrée et vérifiée</li>
+                  <li>• Transfert sécurisé des données utilisateur</li>
+                  <li>• Authentification maintenue entre applications</li>
+                  <li>• Accès aux organisations préservé</li>
+                </ul>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Debug info (development only) */}
+          {/* Informations techniques de debug (development seulement) */}
           {process.env.NODE_ENV === 'development' && (
             <div className="mt-6 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="text-left">
@@ -286,17 +307,53 @@ export default function TransitionPage() {
                 </h4>
                 <div className="text-xs text-yellow-700 space-y-1">
                   <p><strong>Status:</strong> {transitionState.status}</p>
-                  <p><strong>From App:</strong> {fromApp}</p>
                   <p><strong>Return URL:</strong> {returnUrl}</p>
-                  <p><strong>Transition Token:</strong> {transitionToken ? 'Present' : 'Missing'}</p>
-                  <p><strong>User Authenticated:</strong> {state.isAuthenticated ? 'Yes' : 'No'}</p>
-                  <p><strong>User ID:</strong> {state.user?.userID || 'N/A'}</p>
+                  <p><strong>From App:</strong> {fromApp || 'N/A'}</p>
+                  <p><strong>Transition Token:</strong> {transitionToken ? transitionToken.substring(0, 8) + '...' : 'N/A'}</p>
+                  <p><strong>Auth State:</strong> {state.isAuthenticated ? 'Authentifié' : 'Non authentifié'}</p>
+                  <p><strong>User ID:</strong> {state.user?.userID?.substring(0, 8) || 'N/A'}...</p>
+                  <p><strong>Session ID:</strong> {state.user?.sub?.substring(0, 8) || 'N/A'}...</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Footer */}
+          {/* Timeline de transition */}
+          {transitionState.status !== 'error' && (
+            <div className="mt-8 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+              <div className="text-left">
+                <h3 className="text-sm font-medium text-indigo-900 mb-3">
+                  Progression de la transition
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex items-center text-xs">
+                    <div className="h-2 w-2 bg-green-500 rounded-full mr-2"></div>
+                    <span className="text-indigo-700">Authentification application ✓</span>
+                  </div>
+                  <div className="flex items-center text-xs">
+                    <div className={`h-2 w-2 rounded-full mr-2 ${
+                      transitionState.status === 'checking' ? 'bg-blue-500 animate-pulse' : 'bg-green-500'
+                    }`}></div>
+                    <span className="text-indigo-700">
+                      Récupération session {transitionState.status !== 'checking' ? '✓' : '...'}
+                    </span>
+                  </div>
+                  <div className="flex items-center text-xs">
+                    <div className={`h-2 w-2 rounded-full mr-2 ${
+                      transitionState.status === 'redirecting' ? 'bg-blue-500 animate-pulse' : 
+                      transitionState.status === 'authenticated' ? 'bg-green-500' : 'bg-gray-300'
+                    }`}></div>
+                    <span className="text-indigo-700">
+                      Redirection {transitionState.status === 'redirecting' ? '...' : 
+                      transitionState.status === 'authenticated' ? '✓' : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Footer avec informations de support */}
           <div className="mt-8 pt-6 border-t border-gray-200">
             <p className="text-xs text-gray-500 mb-3">
               Transition automatique entre applications Services
