@@ -1,400 +1,474 @@
-// src/components/signup/signupForm.tsx 
+// auth/src/components/signup/signupForm.tsx (version modifiée)
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSignup } from "@/context/signupContext"; 
-import { useRouter } from "next/navigation";
-
-interface FormData {
-  name: string;
-  email: string;
-  confirmEmail: string;
-  password: string;
-  confirmPassword: string;
-}
+import Link from "next/link";
+import { Button } from "@/src/components/landing-page/Button";
+import { useSignup } from "@/context/signupContext";
+import { useEnhancedAuth } from "@/context/authenticationContext";
 
 export default function SignUpForm() {
-  const { signup, error, success, loading } = useSignup(); 
-  const router = useRouter();
-  const [step, setStep] = useState<number>(1);
-  const [formData, setFormData] = useState<FormData>({
-    name: "",
+  const { signup, loading, error, success, clearError, clearSuccess } = useSignup();
+  const { login, state: authState } = useEnhancedAuth();
+  
+  const [formData, setFormData] = useState({
+    username: "",
     email: "",
-    confirmEmail: "",
     password: "",
     confirmPassword: "",
+    firstName: "",
+    lastName: "",
+    acceptTerms: false,
   });
-  const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
-  const [acceptNewsletter, setAcceptNewsletter] = useState<boolean>(false);
-  const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
+  
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
-  // Validation du mot de passe en temps réel
-  const [passwordCriteria, setPasswordCriteria] = useState({
-    length: false,
-    specialChar: false,
-    uppercase: false,
-    number: false,
-  });
-
-  const handleInputChange = (field: keyof FormData, value: string) => {
-    if (field === "name") {
-      value = value.toLowerCase().replace(/\s+/g, '');
+  // Nettoyer les erreurs lors des changements
+  useEffect(() => {
+    if (error) {
+      clearError();
     }
-
-    setFormData(prev => ({ ...prev, [field]: value }));
-
-    // Validation de mot de passe en temps réel
-    if (field === "password") {
-      setPasswordCriteria({
-        length: value.length >= 12,
-        specialChar: /[!@#$%^&*(),.?":{}|<>]/.test(value),
-        uppercase: /[A-Z]/.test(value),
-        number: /[0-9]/.test(value),
-      });
+    if (success) {
+      clearSuccess();
     }
+  }, [formData, clearError, clearSuccess]);
 
-    // Validation de confirmation d'email
-    if (field === 'confirmEmail' || (field === 'email' && formData.confirmEmail)) {
-      const emailToCheck = field === 'email' ? value : formData.email;
-      const confirmToCheck = field === 'confirmEmail' ? value : formData.confirmEmail;
+  // Gestion de la redirection après connexion automatique post-inscription
+  useEffect(() => {
+    if (authState.isAuthenticated && authState.user && registrationSuccess) {
+      console.log('✅ [AUTH-SIGNUP] Inscription et connexion réussies, redirection vers dashboard...');
       
-      if (emailToCheck !== confirmToCheck) {
-        setLocalErrors(prev => ({ ...prev, confirmEmail: "Les emails ne correspondent pas" }));
-      } else {
-        setLocalErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors.confirmEmail;
-          return newErrors;
-        });
-      }
-    }
-
-    // Validation de confirmation de mot de passe
-    if (field === 'confirmPassword' || (field === 'password' && formData.confirmPassword)) {
-      const passwordToCheck = field === 'password' ? value : formData.password;
-      const confirmToCheck = field === 'confirmPassword' ? value : formData.confirmPassword;
+      // Démarrer le compte à rebours
+      setRedirectCountdown(3);
       
-      if (passwordToCheck !== confirmToCheck) {
-        setLocalErrors(prev => ({ ...prev, confirmPassword: "Les mots de passe ne correspondent pas" }));
-      } else {
-        setLocalErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors.confirmPassword;
-          return newErrors;
+      const countdown = setInterval(() => {
+        setRedirectCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            clearInterval(countdown);
+            // Redirection vers le dashboard
+            window.location.href = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000/account';
+            return null;
+          }
+          return prev - 1;
         });
-      }
-    }
+      }, 1000);
 
-    // Avancer les étapes automatiquement
-    if (value.trim()) {
-      if (field === "name") {
-        setStep(prev => Math.max(prev, 2));
-      } else if (field === "email") {
-        setStep(prev => Math.max(prev, 3));
-      } else if (field === "confirmEmail") {
-        setStep(prev => Math.max(prev, 4));
-      } else if (field === "password") {
-        setStep(prev => Math.max(prev, 5));
-      }
+      return () => clearInterval(countdown);
     }
-  };
+  }, [authState.isAuthenticated, authState.user, registrationSuccess]);
 
-  const validateFields = (): boolean => {
+  const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
 
-    if (!formData.name.trim() || formData.name.length < 4) {
-      errors.name = "Le nom d'utilisateur doit contenir au moins 4 caractères.";
+    // Validation username
+    if (!formData.username.trim()) {
+      errors.username = "Le nom d'utilisateur est requis";
+    } else if (formData.username.length < 4) {
+      errors.username = "Le nom d'utilisateur doit contenir au moins 4 caractères";
     }
 
-    if (formData.name.includes(' ')) {
-      errors.name = "Le nom d'utilisateur ne doit pas contenir d'espaces.";
-    }
-
-    const bannedUsernames = ['admin', 'root', 'test', 'null', 'undefined'];
-    if (bannedUsernames.includes(formData.name.toLowerCase())) {
-      errors.name = "Ce nom d'utilisateur est réservé.";
-    }
-
+    // Validation email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      errors.email = "Format d'email invalide.";
+    if (!formData.email.trim()) {
+      errors.email = "L'email est requis";
+    } else if (!emailRegex.test(formData.email)) {
+      errors.email = "Format d'email invalide";
     }
 
-    if (formData.email !== formData.confirmEmail) {
-      errors.confirmEmail = "Les emails ne correspondent pas.";
+    // Validation password
+    if (!formData.password) {
+      errors.password = "Le mot de passe est requis";
+    } else if (formData.password.length < 8) {
+      errors.password = "Le mot de passe doit contenir au moins 8 caractères";
     }
 
+    // Validation confirm password
     if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = "Les mots de passe ne correspondent pas.";
+      errors.confirmPassword = "Les mots de passe ne correspondent pas";
     }
 
-    if (!passwordCriteria.length || !passwordCriteria.specialChar || !passwordCriteria.uppercase || !passwordCriteria.number) {
-      errors.password = "Le mot de passe doit respecter tous les critères de sécurité.";
+    // Validation terms
+    if (!formData.acceptTerms) {
+      errors.acceptTerms = "Vous devez accepter les conditions d'utilisation";
     }
 
-    if (!acceptTerms) {
-      errors.terms = "Vous devez accepter les conditions d'utilisation.";
-    }
-
-    setLocalErrors(errors);
+    setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    console.log('=== SIGNUP FORM DEBUG ===');
-    console.log('Form data:', formData);
-    console.log('Validation result:', validateFields());
-    console.log('Context available:', !!signup);
-    
-    if (!validateFields()) {
-      console.log('Validation failed:', localErrors);
+    if (!validateForm()) {
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
-      console.log('Calling signup with data:', {
-        name: formData.name,
+      console.log('🔄 [AUTH-SIGNUP] Tentative d\'inscription...');
+      
+      // Étape 1: Inscription
+      const signupResult = await signup({
+        username: formData.username,
         email: formData.email,
-        confirmEmail: formData.confirmEmail,
         password: formData.password,
-        confirmPassword: formData.confirmPassword,
+        firstName: formData.firstName || undefined,
+        lastName: formData.lastName || undefined,
+        enabled: true,
+        emailVerified: false,
       });
 
-      // UTILISER LE CONTEXTE SIMPLE
-      await signup({
-        name: formData.name,
-        email: formData.email,
-        confirmEmail: formData.confirmEmail,
-        password: formData.password,
-        confirmPassword: formData.confirmPassword,
-      }, acceptNewsletter);
+      if (signupResult.success) {
+        console.log('✅ [AUTH-SIGNUP] Inscription réussie, connexion automatique...');
+        setRegistrationSuccess(true);
+        
+        // Étape 2: Connexion automatique après inscription
+        const loginResult = await login({
+          username: formData.username,
+          password: formData.password,
+        });
 
-      console.log('Signup completed successfully');
-
-    } catch (err) {
-      console.error("Signup error:", err);
+        if (loginResult.success) {
+          console.log('✅ [AUTH-SIGNUP] Connexion automatique réussie');
+          // La redirection sera gérée par l'useEffect
+        } else {
+          console.warn('⚠️ [AUTH-SIGNUP] Échec connexion automatique, redirection manuelle');
+          // Afficher un message pour connexion manuelle
+          setRedirectCountdown(null);
+          setRegistrationSuccess(false);
+        }
+      } else {
+        console.error('❌ [AUTH-SIGNUP] Échec de l\'inscription');
+        setRegistrationSuccess(false);
+      }
+    } catch (error: any) {
+      console.error('❌ [AUTH-SIGNUP] Erreur d\'inscription:', error);
+      setRegistrationSuccess(false);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  useEffect(() => {
-    if (success) {
-      const timeout = setTimeout(() => {
-        router.push("/signin");
-      }, 2000);
-      return () => clearTimeout(timeout);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+
+    // Nettoyer l'erreur de validation pour ce champ
+    if (validationErrors[name]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
     }
-  }, [success, router]);
+  };
 
-  // DEBUG: Afficher l'état du contexte
-  useEffect(() => {
-    console.log('=== SIGNUP CONTEXT STATE ===');
-    console.log('signup function:', typeof signup);
-    console.log('loading:', loading);
-    console.log('error:', error);
-    console.log('success:', success);
-  }, [signup, loading, error, success]);
+  // Affichage du succès avec redirection
+  if (registrationSuccess && authState.isAuthenticated && redirectCountdown !== null) {
+    return (
+      <div className="text-center">
+        <div className="mb-6">
+          <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
+            <svg className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            Inscription réussie !
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Bienvenue {formData.firstName} {formData.lastName} ({formData.username})
+          </p>
+          
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-md mb-4">
+            <div className="flex items-center justify-center space-x-2 text-blue-600 mb-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              <span className="text-sm font-medium">
+                Redirection vers le dashboard...
+              </span>
+            </div>
+            <p className="text-xs text-blue-700">
+              Redirection automatique dans {redirectCountdown} seconde{redirectCountdown !== 1 ? 's' : ''}
+            </p>
+          </div>
 
-  return (
-    <form onSubmit={handleSubmit}>
-      <div className="space-y-4">
-        {step >= 1 && (
-          <div>
-            <label htmlFor="name" className="mb-1 block text-sm font-medium text-gray-700">
-              Nom d'utilisateur
-            </label>
-            <input
-              id="name"
-              type="text"
-              placeholder="johndoe"
-              className="form-input w-full py-2 lowercase"
-              value={formData.name}
-              required
-              onChange={(e) => handleInputChange("name", e.target.value.toLowerCase())}
-            />
-            {localErrors.name && (
-              <p className="text-red-500 text-sm mt-1">{localErrors.name}</p>
-            )}
-            <ul className="mt-2 text-sm text-gray-700">
-              <li className={`flex items-center ${formData.name.length >= 4 ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> Au moins 4 caractères
-              </li>
-              <li className={`flex items-center ${!formData.name.includes(' ') ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> Pas d'espaces
-              </li>
-              <li className={`flex items-center ${formData.name === formData.name.toLowerCase() ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> En minuscules
-              </li>
+          <div className="p-4 bg-green-50 border border-green-200 rounded-md mb-4">
+            <h4 className="text-sm font-medium text-green-900 mb-2">
+              🎉 Votre compte a été créé avec succès !
+            </h4>
+            <ul className="text-xs text-green-700 space-y-1 text-left">
+              <li>• Nom d'utilisateur: {formData.username}</li>
+              <li>• Email: {formData.email}</li>
+              <li>• Connexion automatique activée</li>
+              <li>• Accès au dashboard en cours...</li>
             </ul>
           </div>
-        )}
 
-        {step >= 2 && (
+          <button
+            onClick={() => {
+              window.location.href = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000/account';
+            }}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+          >
+            Accéder maintenant au dashboard
+            <svg className="ml-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Affichage du succès d'inscription sans connexion automatique
+  if (success && !authState.isAuthenticated) {
+    return (
+      <div className="text-center">
+        <div className="mb-6">
+          <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
+            <svg className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            Inscription réussie !
+          </h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Votre compte a été créé avec succès. Vous pouvez maintenant vous connecter.
+          </p>
+          
+          <div className="space-y-3">
+            <Link
+              href="/signin"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+            >
+              Se connecter maintenant
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-10">
+        <h1 className="text-4xl font-bold">Créez votre compte</h1>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <div className="space-y-4">
+          {/* Nom et Prénom */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-gray-700"
+                htmlFor="firstName"
+              >
+                Prénom
+              </label>
+              <input
+                id="firstName"
+                name="firstName"
+                className="form-input w-full py-2"
+                type="text"
+                placeholder="Votre prénom"
+                value={formData.firstName}
+                onChange={handleChange}
+                disabled={loading || isSubmitting}
+              />
+            </div>
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium text-gray-700"
+                htmlFor="lastName"
+              >
+                Nom
+              </label>
+              <input
+                id="lastName"
+                name="lastName"
+                className="form-input w-full py-2"
+                type="text"
+                placeholder="Votre nom"
+                value={formData.lastName}
+                onChange={handleChange}
+                disabled={loading || isSubmitting}
+              />
+            </div>
+          </div>
+
+          {/* Nom d'utilisateur */}
           <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium text-gray-700">
-              Email
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="username"
+            >
+              Nom d'utilisateur *
+            </label>
+            <input
+              id="username"
+              name="username"
+              className={`form-input w-full py-2 ${validationErrors.username ? 'border-red-500' : ''}`}
+              type="text"
+              placeholder="Votre nom d'utilisateur"
+              value={formData.username}
+              onChange={handleChange}
+              required
+              disabled={loading || isSubmitting}
+            />
+            {validationErrors.username && (
+              <p className="mt-1 text-sm text-red-600">{validationErrors.username}</p>
+            )}
+          </div>
+
+          {/* Email */}
+          <div>
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="email"
+            >
+              Adresse email *
             </label>
             <input
               id="email"
+              name="email"
+              className={`form-input w-full py-2 ${validationErrors.email ? 'border-red-500' : ''}`}
               type="email"
-              placeholder="you@email.com"
-              className="form-input w-full py-2"
+              placeholder="votre@email.com"
               value={formData.email}
+              onChange={handleChange}
               required
-              onChange={(e) => handleInputChange("email", e.target.value)}
+              disabled={loading || isSubmitting}
             />
-            {localErrors.email && (
-              <p className="text-red-500 text-sm mt-1">{localErrors.email}</p>
+            {validationErrors.email && (
+              <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
             )}
           </div>
-        )}
 
-        {step >= 3 && (
+          {/* Mot de passe */}
           <div>
-            <label htmlFor="confirmEmail" className="mb-1 block text-sm font-medium text-gray-700">
-              Confirmer l'email
-            </label>
-            <input
-              id="confirmEmail"
-              type="email"
-              placeholder="Confirmez votre email"
-              className="form-input w-full py-2"
-              value={formData.confirmEmail}
-              required
-              onChange={(e) => handleInputChange("confirmEmail", e.target.value)}
-            />
-            {localErrors.confirmEmail && (
-              <p className="text-red-500 text-sm mt-1">{localErrors.confirmEmail}</p>
-            )}
-          </div>
-        )}
-
-        {step >= 4 && (
-          <div>
-            <label htmlFor="password" className="mb-1 block text-sm font-medium text-gray-700">
-              Mot de passe
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="password"
+            >
+              Mot de passe *
             </label>
             <input
               id="password"
+              name="password"
+              className={`form-input w-full py-2 ${validationErrors.password ? 'border-red-500' : ''}`}
               type="password"
-              autoComplete="new-password"
-              placeholder="••••••••"
-              className="form-input w-full py-2"
+              placeholder="Votre mot de passe"
               value={formData.password}
+              onChange={handleChange}
               required
-              onChange={(e) => handleInputChange("password", e.target.value)}
+              disabled={loading || isSubmitting}
             />
-            {localErrors.password && (
-              <p className="text-red-500 text-sm mt-1">{localErrors.password}</p>
+            {validationErrors.password && (
+              <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
             )}
-            <ul className="mt-2 text-sm text-gray-700">
-              <li className={`flex items-center ${passwordCriteria.length ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> Au moins 12 caractères
-              </li>
-              <li className={`flex items-center ${passwordCriteria.specialChar ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> Au moins un caractère spécial
-              </li>
-              <li className={`flex items-center ${passwordCriteria.uppercase ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> Au moins une majuscule
-              </li>
-              <li className={`flex items-center ${passwordCriteria.number ? "text-green-500" : ""}`}>
-                <span className="mr-2">✔</span> Au moins un chiffre
-              </li>
-            </ul>
           </div>
-        )}
 
-        {step >= 5 && (
+          {/* Confirmation mot de passe */}
           <div>
-            <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-gray-700">
-              Confirmer le mot de passe
+            <label
+              className="mb-1 block text-sm font-medium text-gray-700"
+              htmlFor="confirmPassword"
+            >
+              Confirmer le mot de passe *
             </label>
             <input
               id="confirmPassword"
+              name="confirmPassword"
+              className={`form-input w-full py-2 ${validationErrors.confirmPassword ? 'border-red-500' : ''}`}
               type="password"
-              autoComplete="new-password"
               placeholder="Confirmez votre mot de passe"
-              className="form-input w-full py-2"
               value={formData.confirmPassword}
+              onChange={handleChange}
               required
-              onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+              disabled={loading || isSubmitting}
             />
-            {localErrors.confirmPassword && (
-              <p className="text-red-500 text-sm mt-1">{localErrors.confirmPassword}</p>
+            {validationErrors.confirmPassword && (
+              <p className="mt-1 text-sm text-red-600">{validationErrors.confirmPassword}</p>
             )}
+          </div>
+
+          {/* Acceptation des conditions */}
+          <div className="flex items-start">
+            <input
+              id="acceptTerms"
+              name="acceptTerms"
+              type="checkbox"
+              className={`h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${validationErrors.acceptTerms ? 'border-red-500' : ''}`}
+              checked={formData.acceptTerms}
+              onChange={handleChange}
+              disabled={loading || isSubmitting}
+            />
+            <label htmlFor="acceptTerms" className="ml-2 block text-sm text-gray-700">
+              J'accepte les{" "}
+              <Link href="/terms" className="text-blue-600 underline hover:no-underline">
+                conditions d'utilisation
+              </Link>{" "}
+              et la{" "}
+              <Link href="/privacy" className="text-blue-600 underline hover:no-underline">
+                politique de confidentialité
+              </Link>
+              {" "}*
+            </label>
+          </div>
+          {validationErrors.acceptTerms && (
+            <p className="text-sm text-red-600">{validationErrors.acceptTerms}</p>
+          )}
+        </div>
+
+        {error && (
+          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
           </div>
         )}
 
-        {step >= 5 && (
-          <>
-            <div className="flex items-center justify-between mt-4">
-              <label htmlFor="acceptTerms" className="text-sm text-gray-700">
-                J'accepte les <a href="/terms" className="text-blue-500 hover:underline">conditions d'utilisation</a>
-              </label>
-              <div
-                id="acceptTerms"
-                className={`relative w-12 h-6 ${acceptTerms ? "bg-green-500" : "bg-gray-300"} rounded-full cursor-pointer`}
-                onClick={() => setAcceptTerms(prev => !prev)}
-              >
-                <div
-                  className={`absolute w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${acceptTerms ? "translate-x-6" : ""}`}
-                ></div>
-              </div>
-            </div>
-            {localErrors.terms && (
-              <p className="text-red-500 text-sm mt-1">{localErrors.terms}</p>
+        <div className="mt-6">
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={loading || isSubmitting || !formData.acceptTerms}
+          >
+            {isSubmitting ? (
+              <span className="flex items-center justify-center">
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Inscription en cours...
+              </span>
+            ) : (
+              "Créer mon compte"
             )}
+          </Button>
+        </div>
+      </form>
 
-            <div className="flex items-center justify-between mt-4">
-              <label htmlFor="acceptNewsletter" className="text-sm text-gray-700">
-                S'inscrire à la newsletter
-              </label>
-              <div
-                id="acceptNewsletter"
-                className={`relative w-12 h-6 ${acceptNewsletter ? "bg-green-500" : "bg-gray-300"} rounded-full cursor-pointer`}
-                onClick={() => setAcceptNewsletter(prev => !prev)}
-              >
-                <div
-                  className={`absolute w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${acceptNewsletter ? "translate-x-6" : ""}`}
-                ></div>
-              </div>
-            </div>
-          </>
-        )}
+      <div className="mt-6 text-center">
+        Déjà inscrit ?{" "}
+        <Link className="font-medium text-blue-600 underline hover:no-underline" href="/signin">
+          Se connecter
+        </Link>
       </div>
-
-      {error && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-          <p className="text-red-700 text-sm">{error}</p>
-        </div>
-      )}
-
-      {success && (
-        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
-          <p className="text-green-700 text-sm">{success}</p>
-        </div>
-      )}
-
-      {step >= 5 && (
-        <button
-          type="submit"
-          className="btn w-full bg-black text-white mt-4 disabled:bg-gray-400"
-          disabled={loading || !acceptTerms || Object.keys(localErrors).length > 0}
-        >
-          {loading ? (
-            <span className="flex items-center justify-center">
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Inscription...
-            </span>
-          ) : (
-            "S'inscrire"
-          )}
-        </button>
-      )}
-    </form>
+    </div>
   );
 }

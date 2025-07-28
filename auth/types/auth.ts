@@ -49,7 +49,7 @@ export interface User {
   organizations?: string[]; 
   accessibleOrganizations: any;
   profileID: string;
-  username: string | undefined;
+  username: string ;
   userID: string;
   sub: string;
   email?: string;
