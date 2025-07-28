@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/authenticationContext';
 import { SharedSessionManager } from '@/src/lib/SharedSessionManager';
+import { AUTH_CONFIG } from '@/src/config/auth.config';
 
 interface TransitionState {
   status: 'checking' | 'authenticated' | 'redirecting' | 'error';
@@ -26,40 +27,18 @@ export default function TransitionPage() {
 
   const returnUrl = searchParams.get('returnUrl') || '/account';
   const transitionToken = searchParams.get('token');
-  const fromApp = searchParams.get('from');
+  const fromApp = searchParams.get('from') || 'auth';
 
   useEffect(() => {
     const handleTransition = async () => {
       try {
-        console.log('🔄 [DASHBOARD-TRANSITION] Démarrage transition...', {
-          returnUrl,
-          fromApp,
-          hasToken: !!transitionToken
-        });
-
-        // Étape 1: Authentifier l'app Dashboard
-        setTransitionState({
-          status: 'checking',
-          message: 'Authentification de l\'application Dashboard...',
-          countdown: 0,
-        });
-
-        const appAuthResult = await testAppAuth();
-        if (!appAuthResult.success) {
-          throw new Error(`Authentification app Dashboard échouée: ${appAuthResult.error}`);
-        }
-
-        // Étape 2: Finaliser la transition
-        setTransitionState({
-          status: 'checking',
-          message: 'Récupération de la session utilisateur...',
-          countdown: 0,
-        });
-
+        console.log('🔄 [DASHBOARD-TRANSITION] Démarrage transition depuis', fromApp);
+        
+        // 1. Finaliser la transition avec SharedSessionManager
         const sessionData = SharedSessionManager.completeTransition();
         
-        if (!sessionData || !SharedSessionManager.isSessionValid(sessionData)) {
-          throw new Error('Session invalide ou expirée');
+        if (!sessionData) {
+          throw new Error('Aucune session valide trouvée pour la transition');
         }
 
         console.log('✅ [DASHBOARD-TRANSITION] Session récupérée:', {
@@ -67,57 +46,39 @@ export default function TransitionPage() {
           source: sessionData.source
         });
 
-        // Étape 3: Attendre que le contexte auth soit mis à jour
-        setTransitionState({
-          status: 'authenticated',
-          message: 'Session validée, préparation de la redirection...',
-          countdown: 0,
+        // 2. Attendre que le contexte d'authentification soit prêt
+        await new Promise(resolve => {
+          const checkAuth = () => {
+            if (state.isAuthenticated && state.user) {
+              resolve(true);
+            } else {
+              setTimeout(checkAuth, 100);
+            }
+          };
+          checkAuth();
         });
 
-        // Petite attente pour laisser le contexte se mettre à jour
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Étape 4: Redirection
+        // 3. Redirection finale
         setTransitionState({
           status: 'redirecting',
-          message: 'Redirection vers le tableau de bord...',
+          message: 'Redirection vers le Dashboard...',
           countdown: 3,
         });
 
-        // Compte à rebours de redirection
-        let countdown = 3;
-        const countdownInterval = setInterval(() => {
-          countdown -= 1;
-          setTransitionState(prev => ({
-            ...prev,
-            countdown,
-            message: `Redirection dans ${countdown} seconde${countdown !== 1 ? 's' : ''}...`
-          }));
-
-          if (countdown <= 0) {
-            clearInterval(countdownInterval);
-            console.log('🚀 [DASHBOARD-TRANSITION] Redirection vers:', returnUrl);
-            router.push(returnUrl);
-          }
+        setTimeout(() => {
+          router.push(returnUrl);
         }, 1000);
 
       } catch (error: any) {
         console.error('❌ [DASHBOARD-TRANSITION] Erreur transition:', error);
-        setTransitionState({
-          status: 'error',
-          message: 'Erreur lors de la transition',
-          countdown: 0,
-          error: error.message || 'Erreur inconnue'
-        });
+        // Redirection vers Auth en cas d'échec
+        window.location.href = `${AUTH_CONFIG.AUTH_URL}/signin?returnUrl=${encodeURIComponent(returnUrl)}`;
       }
     };
 
-    // Démarrer la transition après un petit délai
-    const timeout = setTimeout(handleTransition, 500);
-    
-    return () => clearTimeout(timeout);
-  }, [testAppAuth, returnUrl, transitionToken, fromApp, router]);
-
+    handleTransition();
+  }, [fromApp, returnUrl, router, state.isAuthenticated, state.user]);
+  
   const handleManualRedirect = () => {
     console.log('🚀 [DASHBOARD-TRANSITION] Redirection manuelle vers:', returnUrl);
     router.push(returnUrl);

@@ -190,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     try {
       // 1. Authentifier l'app Dashboard
-      const appAuthResult = await authAPI.testAppAuth();
+      const appAuthResult = await testAppAuth();
       if (!appAuthResult.success) {
         throw new Error(`Authentification app Dashboard échouée: ${appAuthResult.error}`);
       }

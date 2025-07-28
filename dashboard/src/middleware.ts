@@ -11,7 +11,6 @@ interface SessionValidation {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  console.log(`🔒 [MIDDLEWARE] Checking route: ${pathname}`);
 
   // Routes publiques qui ne nécessitent pas d'authentification
   const publicRoutes = [
@@ -91,61 +90,24 @@ export async function middleware(req: NextRequest) {
 /**
  * Valider la session utilisateur depuis les cookies et localStorage
  */
-async function validateUserSession(req: NextRequest): Promise<SessionValidation> {
+async function validateUserSession(req: NextRequest): Promise<{ isValid: boolean; user?: any }> {
   try {
-    // 1. Vérifier le cookie utilisateur classique
     const userCookie = req.cookies.get("smp_user_0");
+    const accessTokenCookie = req.cookies.get("smp_user_token");
     
-    if (!userCookie?.value) {
-      console.log('❌ [MIDDLEWARE] Cookie utilisateur manquant');
-      return { isValid: false, error: 'No user cookie' };
+    if (!userCookie?.value || !accessTokenCookie?.value) {
+      return { isValid: false };
     }
 
-    // 2. Parser les données utilisateur
-    let user;
-    try {
-      user = JSON.parse(decodeURIComponent(userCookie.value));
-    } catch (error) {
-      console.log('❌ [MIDDLEWARE] Cookie utilisateur corrompu');
-      return { isValid: false, error: 'Corrupted user cookie' };
+    const user = JSON.parse(decodeURIComponent(userCookie.value));
+    
+    if (!user?.userID || user.userID.startsWith('temp-')) {
+      return { isValid: false };
     }
 
-    if (!user?.userID || !user?.sub) {
-      console.log('❌ [MIDDLEWARE] Données utilisateur invalides');
-      return { isValid: false, error: 'Invalid user data' };
-    }
-
-    // 3. Vérifier le token d'accès
-    const accessTokenCookie = req.cookies.get(AUTH_CONFIG.COOKIES.USER_TOKEN);
-    const sessionIdCookie = req.cookies.get(AUTH_CONFIG.COOKIES.SESSION_ID);
-
-    if (!accessTokenCookie?.value || !sessionIdCookie?.value) {
-      console.log('❌ [MIDDLEWARE] Tokens d\'authentification manquants');
-      return { isValid: false, error: 'Missing auth tokens' };
-    }
-
-    // 4. Validation optionnelle côté serveur (si configurée)
-    if (process.env.VALIDATE_TOKENS_SERVER_SIDE === 'true') {
-      const tokenValidation = await validateTokenWithAuthService(accessTokenCookie.value);
-      
-      if (!tokenValidation.valid) {
-        console.log('❌ [MIDDLEWARE] Token invalide côté serveur');
-        return { isValid: false, error: 'Invalid token' };
-      }
-    }
-
-    console.log('✅ [MIDDLEWARE] Session utilisateur valide');
-    return { 
-      isValid: true, 
-      user: {
-        ...user,
-        sessionId: sessionIdCookie.value
-      }
-    };
-
+    return { isValid: true, user };
   } catch (error) {
-    console.error('❌ [MIDDLEWARE] Erreur validation session:', error);
-    return { isValid: false, error: 'Session validation error' };
+    return { isValid: false };
   }
 }
 
@@ -216,8 +178,8 @@ async function validateTokenWithAuthService(token: string): Promise<{ valid: boo
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-App-ID': AUTH_CONFIG.APP_ID,
-        'X-App-Secret': AUTH_CONFIG.APP_SECRET,
+        'X-App-ID': AUTH_CONFIG.AUTH_APP.APP_ID,
+        'X-App-Secret': AUTH_CONFIG.AUTH_APP.APP_SECRET,
       },
       body: JSON.stringify({
         query: `
@@ -259,7 +221,7 @@ async function validateTokenWithAuthService(token: string): Promise<{ valid: boo
 async function validateOrganizationAccessAPI(userID: string, organizationID: string): Promise<SessionValidation> {
   try {
     // Utiliser l'API interne du dashboard
-    const response = await fetch(`${AUTH_CONFIG.API_URL}/api/user/${userID}/organizations`, {
+    const response = await fetch(`${AUTH_CONFIG.AUTH_URL}/api/user/${userID}/organizations`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

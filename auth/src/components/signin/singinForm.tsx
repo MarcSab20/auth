@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/authenticationContext";
 import { useMagicLink } from "@/context/magicLinkContext";
 import Link from "next/link";
 import { Button } from '@/src/components/landing-page/Button';
 import { useSearchParams } from "next/navigation";
 import { RedirectToDashboard } from "@/src/components/auth/RedirectToDashboard";
+import { AUTH_CONFIG } from "@/src/config/auth.config";
+import { TransitionService } from "@/src/lib/TransitionService";
 
 export default function SignInForm() {
   const { state, login, clearError, requestMagicLink } = useAuth();
@@ -57,20 +59,59 @@ export default function SignInForm() {
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     setValidationErrors({});
     clearError();
-
     if (!validateForm()) {
       return;
     }
-
     const result = await login({ username: username.trim(), password });
-    
     if (result.success) {
-      window.location.href = "/account";
+      try {
+        await redirectToDashboard('/account');
+      } catch (error) {
+        console.error('Erreur redirection Dashboard:', error);
+        window.location.href = "/account";
+      }
     }
   };
+
+  const redirectToDashboard = useCallback(async (returnUrl: string = '/account'): Promise<void> => {
+    try {
+      console.log('🔄 [AUTH] Préparation redirection vers Dashboard...');
+      
+      if (!state.isAuthenticated || !state.user) {
+        throw new Error('Utilisateur non authentifié');
+      }
+
+      if (!state.token) {
+        throw new Error('Token d\'accès manquant');
+      }
+
+      // Utiliser TransitionService pour préparer la transition
+      const transitionToken = TransitionService.prepareTransition(
+        state.user,
+        state.token,
+        state.refreshToken || undefined,
+        returnUrl
+      );
+      
+      // Construire l'URL de transition vers Dashboard
+      const dashboardUrl = new URL('/transition', AUTH_CONFIG.DASHBOARD_URL);
+      dashboardUrl.searchParams.set('token', transitionToken);
+      dashboardUrl.searchParams.set('returnUrl', returnUrl);
+      dashboardUrl.searchParams.set('from', 'auth');
+      
+      console.log('🚀 [AUTH] Redirection vers Dashboard:', dashboardUrl.toString());
+      
+      // Effectuer la redirection
+      window.location.href = dashboardUrl.toString();
+      
+    } catch (error: any) {
+      console.error('❌ [AUTH] Erreur redirection Dashboard:', error);
+      throw error;
+    }
+  }, [state.isAuthenticated, state.user, state.token, state.refreshToken]);
+
 
   const handleMagicLinkRequest = async (e: React.FormEvent) => {
     e.preventDefault();
