@@ -1,3 +1,4 @@
+// dashboard/src/services/api/authAPI.ts - CORRECTION POUR COMPATIBILITÉ AVEC GATEWAY
 import { AUTH_CONFIG } from '@/src/config/auth.config';
 
 interface UserValidationResult {
@@ -31,11 +32,46 @@ class AuthAPI {
   private baseURL = AUTH_CONFIG.GRAPHQL_URL;
 
   /**
-   * 🔧 Authentification de l'application Dashboard
+   * 🔧 Test de connectivité CORS avec la Gateway
+   */
+  async testCorsConnectivity(): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('🔧 [DASHBOARD-API] Test connectivité CORS...');
+      
+      const response = await fetch(`${this.baseURL.replace('/graphql', '')}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Name': 'dashboard-app',
+          'X-Client-Version': '1.0.0',
+        },
+      });
+
+      if (response.ok) {
+        const healthData = await response.json();
+        console.log('✅ [DASHBOARD-API] Gateway accessible:', healthData);
+        return { success: true };
+      } else {
+        throw new Error(`Health check failed: ${response.status}`);
+      }
+    } catch (error: any) {
+      console.error('❌ [DASHBOARD-API] Erreur connectivité:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 🔧 Authentification de l'application Dashboard - CORRIGÉE
    */
   async testAppAuth(): Promise<AppAuthResult> {
     try {
       console.log('🔧 [DASHBOARD-API] Authentification app Dashboard...');
+      
+      // D'abord tester la connectivité CORS
+      const corsTest = await this.testCorsConnectivity();
+      if (!corsTest.success) {
+        throw new Error(`CORS Error: ${corsTest.error}`);
+      }
       
       const query = `
         mutation AuthenticateApp($appLoginInput: AppLoginInput!) {
@@ -60,18 +96,30 @@ class AuthAPI {
         }
       };
 
+      // CORRECTION: Utiliser les mêmes en-têtes que l'app auth
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+        'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
+        'X-Request-ID': this.generateRequestId(),
+        'Origin': AUTH_CONFIG.DASHBOARD_URL,
+        'X-Client-Name': 'dashboard-app',
+        // Retirer X-Client-Version temporairement pour test
+      };
+
+      console.log('📤 [DASHBOARD-API] Sending headers:', Object.keys(headers));
+
       const response = await fetch(this.baseURL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
-          'X-Request-ID': this.generateRequestId(),
-          'X-Client-Name': 'dashboard-app',
-          'X-Client-Version': '1.0.0'
-        },
+        headers,
         body: JSON.stringify({ query, variables }),
+        // Ajouter mode CORS explicite
+        mode: 'cors',
+        credentials: 'include',
       });
+
+      console.log('📡 [DASHBOARD-API] Response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -80,6 +128,7 @@ class AuthAPI {
       }
 
       const result = await response.json();
+      console.log('📋 [DASHBOARD-API] App auth result:', result);
 
       if (result.errors && result.errors.length > 0) {
         console.error('❌ [DASHBOARD-API] GraphQL errors:', result.errors);
@@ -106,6 +155,15 @@ class AuthAPI {
 
     } catch (error: any) {
       console.error('❌ [DASHBOARD-API] Échec auth app Dashboard:', error);
+      
+      // Diagnostics supplémentaires
+      if (error.message.includes('CORS')) {
+        console.error('🚨 [DASHBOARD-API] ERREUR CORS - Vérifier la configuration de la gateway');
+      }
+      if (error.message.includes('NetworkError')) {
+        console.error('🚨 [DASHBOARD-API] ERREUR RÉSEAU - Gateway inaccessible ?');
+      }
+      
       return { 
         success: false, 
         error: error.message || 'Authentification application Dashboard échouée' 
@@ -114,7 +172,7 @@ class AuthAPI {
   }
 
   /**
-   * 🔍 Validation de token utilisateur avec enrichissement (CORRECTION)
+   * 🔍 Validation de token utilisateur avec enrichissement
    */
   async validateUserToken(token: string): Promise<UserValidationResult> {
     try {
@@ -154,20 +212,29 @@ class AuthAPI {
 
       const dashboardAppToken = localStorage.getItem('dashboard_app_token');
       
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+        'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
+        'X-Client-Name': 'dashboard-app',
+        'X-Request-ID': this.generateRequestId(),
+        'Origin': AUTH_CONFIG.DASHBOARD_URL,
+      };
+
+      if (dashboardAppToken) {
+        headers['X-App-Token'] = dashboardAppToken;
+      }
+
       const response = await fetch(this.baseURL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
-          'X-Client-Name': 'dashboard-app',
-          ...(dashboardAppToken && { 'X-App-Token': dashboardAppToken }),
-          'X-Request-ID': this.generateRequestId(),
-        },
+        headers,
         body: JSON.stringify({ 
           query, 
           variables: { token } 
         }),
+        mode: 'cors',
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -190,7 +257,7 @@ class AuthAPI {
           userID: validation.userInfo.sub,
           username: validation.userInfo.preferred_username || validation.userInfo.email,
           email: validation.userInfo.email,
-          profileID: validation.userInfo.sub, // À adapter selon votre logique
+          profileID: validation.userInfo.sub,
           accessibleOrganizations: validation.userInfo.organization_ids || [],
           organizations: validation.userInfo.organization_ids || [],
           sub: validation.userInfo.sub,
@@ -199,8 +266,6 @@ class AuthAPI {
           family_name: validation.userInfo.family_name,
           state: validation.userInfo.state,
           email_verified: validation.userInfo.email_verified,
-          
-          // Attributs étendus
           attributes: validation.userInfo.attributes
         };
 
@@ -228,20 +293,29 @@ class AuthAPI {
 
       const dashboardAppToken = localStorage.getItem('dashboard_app_token');
       
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
+        'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
+        'X-Client-Name': 'dashboard-app',
+        'X-Request-ID': this.generateRequestId(),
+        'Origin': AUTH_CONFIG.DASHBOARD_URL,
+      };
+
+      if (dashboardAppToken) {
+        headers['X-App-Token'] = dashboardAppToken;
+      }
+      
       const response = await fetch(this.baseURL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-ID': AUTH_CONFIG.DASHBOARD_APP.APP_ID,
-          'X-App-Secret': AUTH_CONFIG.DASHBOARD_APP.APP_SECRET,
-          'X-Client-Name': 'dashboard-app',
-          ...(dashboardAppToken && { 'X-App-Token': dashboardAppToken }),
-          'X-Request-ID': this.generateRequestId(),
-        },
+        headers,
         body: JSON.stringify({ 
           query, 
           variables: { token } 
         }),
+        mode: 'cors',
+        credentials: 'include',
       });
 
       if (response.ok) {

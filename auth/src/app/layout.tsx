@@ -1,4 +1,4 @@
-// auth/src/app/layout.tsx - VERSION UNIFIÉE AVEC SDK
+// auth/src/app/layout.tsx - VERSION AVEC TEST CORS
 import './css/style.css'
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/context/authenticationContext";
@@ -6,6 +6,7 @@ import { SignupProvider } from "@/context/signupContext";
 import { MagicLinkProvider } from "@/context/magicLinkContext";
 import { WaitingListSignupProvider } from "@/context/waitingListSignupContext";
 import { SignupInvitationProvider } from "@/context/signupInvitationContext";
+import CorsTest from "@/src/components/debug/CorsTest";
 import type { Metadata } from 'next'
 import type React from 'react'
 
@@ -43,6 +44,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 MAGIC_LINK_ENABLED: ${process.env.NEXT_PUBLIC_MAGIC_LINK_ENABLED !== 'false'},
                 DEBUG: ${process.env.NODE_ENV === 'development'}
               };
+              console.log('🔧 SMP_CONFIG loaded:', window.SMP_CONFIG);
             `,
           }}
         />
@@ -58,6 +60,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
                     {children}
                   </div>
+                  {/* Test CORS en développement */}
+                  <CorsTest />
                 </WaitingListSignupProvider>
               </SignupInvitationProvider>
             </SignupProvider>
