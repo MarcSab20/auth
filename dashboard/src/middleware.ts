@@ -1,4 +1,4 @@
-// dashboard/src/middleware.ts
+// dashboard/src/middleware.ts - CORRECTION POUR ÉVITER LES BOUCLES
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_CONFIG } from "@/src/config/auth.config";
 
@@ -46,10 +46,11 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(accountURL);
     } else {
       console.log('❌ [DASHBOARD-MIDDLEWARE] Pas de session, redirection vers auth app');
-      // Redirection vers l'app d'authentification sur le port 3000
-      const authURL = new URL('/signin', AUTH_CONFIG.AUTH_URL);
-      authURL.searchParams.set('returnUrl', `${AUTH_CONFIG.DASHBOARD_URL}/account`);
-      authURL.searchParams.set('from', 'dashboard');
+      
+      // CORRECTION: Redirection vers l'app d'authentification avec URL complète
+      const authURL = `${AUTH_CONFIG.AUTH_URL}/signin?returnUrl=${encodeURIComponent(`${AUTH_CONFIG.DASHBOARD_URL}/account`)}&from=dashboard`;
+      
+      console.log('🔄 [DASHBOARD-MIDDLEWARE] Redirection vers:', authURL);
       return NextResponse.redirect(authURL);
     }
   }
@@ -61,12 +62,10 @@ export async function middleware(req: NextRequest) {
     if (!sessionValidation.isValid) {
       console.log('❌ [DASHBOARD-MIDDLEWARE] Session invalide pour route protégée');
       
-      // Redirection vers l'app d'authentification avec return URL
-      const authURL = new URL('/signin', AUTH_CONFIG.AUTH_URL);
-      authURL.searchParams.set('returnUrl', `${AUTH_CONFIG.DASHBOARD_URL}${pathname}`);
-      authURL.searchParams.set('message', 'Veuillez vous connecter pour accéder à cette page');
-      authURL.searchParams.set('from', 'dashboard');
+      // CORRECTION: Redirection vers l'app d'authentification avec URL complète
+      const authURL = `${AUTH_CONFIG.AUTH_URL}/signin?returnUrl=${encodeURIComponent(`${AUTH_CONFIG.DASHBOARD_URL}${pathname}`)}&message=${encodeURIComponent('Veuillez vous connecter pour accéder à cette page')}&from=dashboard`;
       
+      console.log('🔄 [DASHBOARD-MIDDLEWARE] Redirection vers auth:', authURL);
       return NextResponse.redirect(authURL);
     }
 
@@ -117,10 +116,16 @@ async function validateUserSession(req: NextRequest): Promise<{ isValid: boolean
       return { isValid: false };
     }
 
-    const user = JSON.parse(decodeURIComponent(userCookie.value));
+    let user;
+    try {
+      user = JSON.parse(decodeURIComponent(userCookie.value));
+    } catch (parseError) {
+      console.log('❌ [DASHBOARD-MIDDLEWARE] Erreur parsing cookie utilisateur:', parseError);
+      return { isValid: false };
+    }
     
     if (!user?.userID || user.userID.startsWith('temp-')) {
-      console.log('❌ [DASHBOARD-MIDDLEWARE] Utilisateur invalide ou temporaire');
+      console.log('❌ [DASHBOARD-MIDDLEWARE] Utilisateur invalide ou temporaire:', user?.userID);
       return { isValid: false };
     }
 
@@ -179,6 +184,7 @@ export const config = {
   matcher: [
     '/',
     '/account/:path*',
-    '/api/:path*'
+    // Exclure les routes API et les assets statiques
+    '/((?!api|_next/static|_next/image|favicon.ico|images|css|js|styles).*)',
   ],
 };

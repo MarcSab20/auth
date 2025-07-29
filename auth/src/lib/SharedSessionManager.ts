@@ -1,4 +1,4 @@
-// shared/lib/SharedSessionManager.ts
+// auth/src/lib/SharedSessionManager.ts - CORRECTION DES COOKIES CROSS-DOMAIN
 export interface SessionData {
   user: {
     userID: string;
@@ -37,7 +37,8 @@ export class SharedSessionManager {
     TRANSITION_DATA: 'smp_transition_data'
   };
 
-  private static readonly COOKIE_DOMAIN = process.env.NODE_ENV === 'production' ? '.services.com' : 'localhost';
+  // CORRECTION: Configuration des cookies adaptée à l'environnement de développement
+  private static readonly COOKIE_DOMAIN = process.env.NODE_ENV === 'production' ? '.services.com' : undefined; // UNDEFINED pour localhost
   private static readonly COOKIE_SECURE = process.env.NODE_ENV === 'production';
   private static readonly SESSION_DURATION = 8 * 60 * 60 * 1000; // 8 heures
 
@@ -60,23 +61,28 @@ export class SharedSessionManager {
       localStorage.setItem(this.STORAGE_KEYS.LAST_ACTIVITY, sessionData.lastActivity);
       localStorage.setItem(this.STORAGE_KEYS.SESSION_SOURCE, sessionData.source);
 
-      // 2. Stocker dans cookies cross-domain
-      this.setCrossDomainCookie('smp_user_token', sessionData.tokens.accessToken);
+      // 2. Stocker dans cookies cross-domain - CORRECTION POUR LOCALHOST
+      this.setCrossDomainCookie('smp_user_token', sessionData.tokens.accessToken, { maxAge: 7 * 24 * 60 * 60 });
       
       if (sessionData.tokens.refreshToken) {
-        this.setCrossDomainCookie('smp_user_refresh', sessionData.tokens.refreshToken);
+        this.setCrossDomainCookie('smp_user_refresh', sessionData.tokens.refreshToken, { maxAge: 7 * 24 * 60 * 60 });
       }
       
-      this.setCrossDomainCookie('smp_session_id', sessionData.sessionId);
+      this.setCrossDomainCookie('smp_session_id', sessionData.sessionId, { maxAge: 7 * 24 * 60 * 60 });
 
-      // 3. Cookie user standard pour compatibilité serveur
-      const userCookieValue = encodeURIComponent(JSON.stringify(sessionData.user));
-      this.setCrossDomainCookie('smp_user_0', userCookieValue);
+      // 3. Cookie user standard pour compatibilité serveur - CORRECTION
+      const userCookieValue = JSON.stringify(sessionData.user); // Ne pas encoder ici
+      this.setCrossDomainCookie('smp_user_0', userCookieValue, { maxAge: 7 * 24 * 60 * 60 });
 
       // 4. Déclencher l'événement de changement de session
       this.broadcastSessionChange(sessionData);
 
       console.log('✅ [SESSION-MANAGER] Session cross-app stockée avec succès');
+      console.log('🔍 [SESSION-MANAGER] Cookies créés:', {
+        smp_user_token: 'SET',
+        smp_session_id: 'SET',
+        smp_user_0: 'SET'
+      });
 
     } catch (error) {
       console.error('❌ [SESSION-MANAGER] Erreur stockage session:', error);
@@ -95,7 +101,11 @@ export class SharedSessionManager {
       const source = localStorage.getItem(this.STORAGE_KEYS.SESSION_SOURCE) as 'auth' | 'dashboard' || 'auth';
 
       if (!accessToken || !userDataStr || !sessionId) {
-        console.log('ℹ️ [SESSION-MANAGER] Session incomplète');
+        console.log('ℹ️ [SESSION-MANAGER] Session incomplète:', {
+          accessToken: !!accessToken,
+          userDataStr: !!userDataStr,
+          sessionId: !!sessionId
+        });
         return null;
       }
 
@@ -222,43 +232,15 @@ export class SharedSessionManager {
   }
 
   /**
-   * Préparer la transition entre applications
-   */
-  static prepareTransition(targetApp: 'auth' | 'dashboard', returnUrl?: string): string {
-    const currentSession = this.getSession();
-    
-    if (!currentSession) {
-      throw new Error('Aucune session active pour la transition');
-    }
-
-    const transitionData = {
-      sessionId: currentSession.sessionId,
-      targetApp,
-      returnUrl,
-      timestamp: Date.now(),
-      fromApp: currentSession.source
-    };
-
-    localStorage.setItem(this.STORAGE_KEYS.TRANSITION_DATA, JSON.stringify(transitionData));
-    
-    // Créer un token de transition temporaire (5 minutes)
-    const transitionToken = this.generateTransitionToken();
-    this.setCrossDomainCookie('smp_transition_token', transitionToken, { maxAge: 300 });
-
-    return transitionToken;
-  }
-
-  /**
    * Finaliser la transition
    */
   static completeTransition(): SessionData | null {
     try {
       const transitionDataStr = localStorage.getItem(this.STORAGE_KEYS.TRANSITION_DATA);
-      const transitionToken = this.getCookie('smp_transition_token');
 
-      if (!transitionDataStr || !transitionToken) {
-        console.log('ℹ️ [SESSION-MANAGER] Aucune transition en cours');
-        return this.getSession(); // Retourner la session normale
+      if (!transitionDataStr) {
+        console.log('ℹ️ [SESSION-MANAGER] Aucune transition en cours, récupération session normale');
+        return this.getSession();
       }
 
       const transitionData = JSON.parse(transitionDataStr);
@@ -349,6 +331,7 @@ export class SharedSessionManager {
     return `trans_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  // CORRECTION: Cookie cross-domain adaptée à localhost
   private static setCrossDomainCookie(
     name: string, 
     value: string, 
@@ -360,7 +343,12 @@ export class SharedSessionManager {
     
     let cookieString = `${name}=${encodeURIComponent(value)}`;
     cookieString += `; Path=/`;
-    cookieString += `; Domain=${this.COOKIE_DOMAIN}`;
+    
+    // CORRECTION: Ne pas définir de domaine en localhost pour permettre le partage
+    if (this.COOKIE_DOMAIN) {
+      cookieString += `; Domain=${this.COOKIE_DOMAIN}`;
+    }
+    
     cookieString += `; Max-Age=${maxAge}`;
     cookieString += `; SameSite=Lax`;
     
@@ -368,6 +356,7 @@ export class SharedSessionManager {
       cookieString += `; Secure`;
     }
 
+    console.log('🍪 [SESSION-MANAGER] Setting cookie:', cookieString);
     document.cookie = cookieString;
   }
 

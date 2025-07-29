@@ -1,3 +1,4 @@
+// auth/src/middleware.ts - CORRECTION DE LA BOUCLE INFINIE
 import { NextRequest, NextResponse } from "next/server";
 
 export async function middleware(req: NextRequest) {
@@ -32,16 +33,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Route racine "/" - redirection conditionnelle
+  // Route racine "/" - redirection conditionnelle SANS BOUCLE
   if (pathname === "/") {
     if (userCookie?.value) {
       try {
         const user = JSON.parse(decodeURIComponent(userCookie.value));
         if (user?.userID && !user.userID.startsWith('temp-')) {
-          console.log(`🔄 [MIDDLEWARE] Utilisateur connecté, redirection vers /account`);
-          const accountURL = req.nextUrl.clone();
-          accountURL.pathname = "/account";
-          return NextResponse.redirect(accountURL);
+          console.log(`🔄 [MIDDLEWARE] Utilisateur connecté, laissant la page gérer la redirection vers Dashboard`);
+          // NE PAS REDIRIGER ICI - laisser la page gérer la redirection vers le dashboard
+          return NextResponse.next();
         }
       } catch (error) {
         console.log('⚠️ [MIDDLEWARE] Erreur parsing cookie:', error);
@@ -55,38 +55,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(signinURL);
   }
 
-  // Routes protégées (/account et ses sous-routes)
+  // Routes protégées (/account et ses sous-routes) - CES ROUTES NE DEVRAIENT PAS EXISTER DANS L'APP AUTH
   if (pathname.startsWith("/account")) {
-    console.log('🔒 [MIDDLEWARE] Route protégée accédée');
+    console.log('⚠️ [MIDDLEWARE] Route /account accédée dans l\'app AUTH - ceci ne devrait pas arriver');
     
-    if (!userCookie?.value) {
-      console.log('❌ [MIDDLEWARE] Pas de cookie utilisateur, redirection vers signin');
-      const loginURL = req.nextUrl.clone();
-      loginURL.pathname = "/signin";
-      loginURL.searchParams.set("message", "Veuillez vous connecter pour accéder à cette page");
-      return NextResponse.redirect(loginURL);
-    }
-
-    try {
-      const user = JSON.parse(decodeURIComponent(userCookie.value));
-      
-      if (!user?.userID) {
-        throw new Error("Invalid user data - missing userID");
-      }
-      
-      if (user.userID.startsWith('temp-')) {
-        throw new Error("Temporary user session detected");
-      }
-      
-      console.log(`✅ [MIDDLEWARE] Utilisateur authentifié: ${user.userID}`);
-      
-    } catch (error) {
-      console.log('❌ [MIDDLEWARE] Session invalide:', error);
-      const loginURL = req.nextUrl.clone();
-      loginURL.pathname = "/signin";
-      loginURL.searchParams.set("message", "Session invalide, veuillez vous reconnecter");
-      return NextResponse.redirect(loginURL);
-    }
+    // Si quelqu'un essaie d'accéder à /account dans l'app auth, le rediriger vers signin
+    const signinURL = req.nextUrl.clone();
+    signinURL.pathname = "/signin";
+    signinURL.searchParams.set("message", "Veuillez vous connecter pour accéder au dashboard");
+    return NextResponse.redirect(signinURL);
   }
 
   // Pour toutes les autres routes, laisser passer

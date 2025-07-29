@@ -1,3 +1,4 @@
+// auth/src/components/signin/singinForm.tsx - CORRECTION DE LA REDIRECTION
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -6,7 +7,6 @@ import { useMagicLink } from "@/context/magicLinkContext";
 import Link from "next/link";
 import { Button } from '@/src/components/landing-page/Button';
 import { useSearchParams } from "next/navigation";
-import { RedirectToDashboard } from "@/src/components/auth/RedirectToDashboard";
 import { AUTH_CONFIG } from "@/src/config/auth.config";
 import { TransitionService } from "@/src/lib/TransitionService";
 
@@ -19,7 +19,9 @@ export default function SignInForm() {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'password' | 'magic-link'>('password');
   const [magicLinkEnabled, setMagicLinkEnabled] = useState(false);
-    const [magicLinkAction, setMagicLinkAction] = useState<'login' | 'register'>('login');
+  const [magicLinkAction, setMagicLinkAction] = useState<'login' | 'register'>('login');
+  const [isRedirecting, setIsRedirecting] = useState(false);
+  
   const initialMessage = searchParams.get("message");
 
   useEffect(() => {
@@ -57,27 +59,10 @@ export default function SignInForm() {
     return Object.keys(errors).length === 0;
   };
 
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setValidationErrors({});
-    clearError();
-    if (!validateForm()) {
-      return;
-    }
-    const result = await login({ username: username.trim(), password });
-    if (result.success) {
-      try {
-        await redirectToDashboard('/account');
-      } catch (error) {
-        console.error('Erreur redirection Dashboard:', error);
-        window.location.href = "/account";
-      }
-    }
-  };
-
   const redirectToDashboard = useCallback(async (returnUrl: string = '/account'): Promise<void> => {
     try {
-      console.log('🔄 [AUTH] Préparation redirection vers Dashboard...');
+      console.log('🚀 [SIGNIN] Préparation redirection vers Dashboard...');
+      setIsRedirecting(true);
       
       if (!state.isAuthenticated || !state.user) {
         throw new Error('Utilisateur non authentifié');
@@ -87,31 +72,42 @@ export default function SignInForm() {
         throw new Error('Token d\'accès manquant');
       }
 
-      // Utiliser TransitionService pour préparer la transition
-      const transitionToken = TransitionService.prepareTransition(
-        state.user,
-        state.token,
-        state.refreshToken || undefined,
-        returnUrl
-      );
+      // Construire l'URL de redirection directe vers le Dashboard
+      const dashboardUrl = new URL('/', AUTH_CONFIG.DASHBOARD_URL);
       
-      // Construire l'URL de transition vers Dashboard
-      const dashboardUrl = new URL('/transition', AUTH_CONFIG.DASHBOARD_URL);
-      dashboardUrl.searchParams.set('token', transitionToken);
-      dashboardUrl.searchParams.set('returnUrl', returnUrl);
-      dashboardUrl.searchParams.set('from', 'auth');
+      console.log('🚀 [SIGNIN] Redirection vers Dashboard:', dashboardUrl.toString());
       
-      console.log('🚀 [AUTH] Redirection vers Dashboard:', dashboardUrl.toString());
-      
-      // Effectuer la redirection
+      // Effectuer la redirection externe
       window.location.href = dashboardUrl.toString();
       
     } catch (error: any) {
-      console.error('❌ [AUTH] Erreur redirection Dashboard:', error);
+      console.error('❌ [SIGNIN] Erreur redirection Dashboard:', error);
+      setIsRedirecting(false);
       throw error;
     }
-  }, [state.isAuthenticated, state.user, state.token, state.refreshToken]);
+  }, [state.isAuthenticated, state.user, state.token]);
 
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setValidationErrors({});
+    clearError();
+    
+    if (!validateForm()) {
+      return;
+    }
+    
+    try {
+      const result = await login({ username: username.trim(), password });
+      
+      if (result.success) {
+        console.log('✅ [SIGNIN] Connexion réussie, redirection...');
+        await redirectToDashboard('/account');
+      }
+    } catch (error) {
+      console.error('❌ [SIGNIN] Erreur lors de la connexion:', error);
+      setIsRedirecting(false);
+    }
+  };
 
   const handleMagicLinkRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,9 +154,27 @@ export default function SignInForm() {
     }
   };
 
-  const isLoading = state.isLoading || magicLinkState.isLoading;
+  const isLoading = state.isLoading || magicLinkState.isLoading || isRedirecting;
   const currentError = state.error || magicLinkState.error;
   const magicLinkSuccess = magicLinkState.success;
+
+  // Si redirection en cours, afficher un écran de redirection
+  if (isRedirecting) {
+    return (
+      <div className="max-w-sm mx-auto">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Connexion réussie !</h2>
+          <p className="text-gray-600 mb-4">Redirection vers le dashboard...</p>
+          {state.user && (
+            <p className="text-sm text-gray-500">
+              Bienvenue {state.user.username}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-sm mx-auto">
@@ -282,34 +296,6 @@ export default function SignInForm() {
                 "Se connecter"
               )}
             </Button>
-            {/* Bouton de redirection vers Dashboard si connecté */}
-            {state.isAuthenticated && state.user && (
-              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
-                      <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-green-900">
-                        Connexion réussie !
-                      </p>
-                      <p className="text-xs text-green-700">
-                        Bienvenue {state.user.username}
-                      </p>
-                    </div>
-                  </div>
-                  <RedirectToDashboard
-                    returnUrl="/account"
-                    className="whitespace-nowrap"
-                  >
-                    Accéder au Dashboard
-                  </RedirectToDashboard>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="mt-6 text-center">
