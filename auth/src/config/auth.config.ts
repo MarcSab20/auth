@@ -8,13 +8,17 @@ export const AUTH_CONFIG = {
     APP_ID: process.env.NEXT_PUBLIC_DASHBOARD_APP_ID || 'f2655ffda8594853',
     APP_SECRET: process.env.NEXT_PUBLIC_DASHBOARD_APP_SECRET || 'TA7Vin/JY0YIp9sGpiy6d7ade351Ub+Ia3Pj1acdMb7AxKL/t1vVCcXt6NSaEiTfYbCes1b4Qs8l54buR17oQdsP9p0lpx0ojKaSdjzER9ftagPpr/5byPZhyxsQNU/V9dzoIx4eVV2sSiuFq4XFNL48v6wZz3znX4IlLenGji8=',
   },
-  // Gateway partagé
+  
+  // Gateway partagé - URL FIXE
   GATEWAY_URL: process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:4000',
   GRAPHQL_URL: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
   
-  // URLs des applications
-  AUTH_URL: process.env.NEXT_PUBLIC_AUTH_URL || 'http://localhost:3001',
-  DASHBOARD_URL: process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000',
+  // URLs des applications - NOUVEAUX PORTS
+  AUTH_URL: process.env.NEXT_PUBLIC_AUTH_URL || 'http://localhost:3000',      // Auth sur port 3000
+  DASHBOARD_URL: process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002', // Dashboard sur port 3002
+  
+  // Alias pour compatibilité
+  API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
   
   // Configuration de session
   SESSION_DURATION: 8 * 60 * 60 * 1000, // 8 heures
@@ -47,11 +51,24 @@ export const AUTH_CONFIG = {
 } as const;
 
 export function validateAuthConfig(): void {
-  const required = ['APP_ID', 'APP_SECRET', 'API_URL', 'GRAPHQL_URL'];
+  const required = [
+    { key: 'AUTH_APP.APP_ID', value: AUTH_CONFIG.AUTH_APP.APP_ID },
+    { key: 'AUTH_APP.APP_SECRET', value: AUTH_CONFIG.AUTH_APP.APP_SECRET },
+    { key: 'GRAPHQL_URL', value: AUTH_CONFIG.GRAPHQL_URL },
+    { key: 'AUTH_URL', value: AUTH_CONFIG.AUTH_URL },
+    { key: 'DASHBOARD_URL', value: AUTH_CONFIG.DASHBOARD_URL }
+  ];
   
-  for (const key of required) {
-    if (!AUTH_CONFIG[key as keyof typeof AUTH_CONFIG]) {
+  for (const { key, value } of required) {
+    if (!value) {
       throw new Error(`Configuration manquante: ${key}`);
     }
   }
+  
+  console.log('✅ [CONFIG] Configuration Auth validée:', {
+    AUTH_URL: AUTH_CONFIG.AUTH_URL,      // http://localhost:3000
+    DASHBOARD_URL: AUTH_CONFIG.DASHBOARD_URL, // http://localhost:3002
+    GRAPHQL_URL: AUTH_CONFIG.GRAPHQL_URL,
+    COOKIE_DOMAIN: AUTH_CONFIG.COOKIE_DOMAIN
+  });
 }
