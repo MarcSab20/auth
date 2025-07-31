@@ -1,4 +1,5 @@
-// auth/src/components/signup/signupForm.tsx (version modifiée)
+// auth/src/components/signup/signupForm.tsx - VERSION PROGRESSIVE
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,24 +8,67 @@ import { Button } from "@/src/components/landing-page/Button";
 import { useSignup } from "@/context/signupContext";
 import { useEnhancedAuth } from "@/context/authenticationContext";
 
+interface PasswordCriteria {
+  length: boolean;
+  specialChar: boolean;
+  uppercase: boolean;
+  number: boolean;
+}
+
+interface UsernameCriteria {
+  length: boolean;
+  noSpaces: boolean;
+  lowercase: boolean;
+  notBanned: boolean;
+}
+
+interface FormData {
+  username: string;
+  email: string;
+  confirmEmail: string;
+  password: string;
+  confirmPassword: string;
+  firstName?: string;
+  lastName?: string;
+}
+
 export default function SignUpForm() {
   const { signup, loading, error, success, clearError, clearSuccess } = useSignup();
   const { login, state: authState } = useEnhancedAuth();
   
-  const [formData, setFormData] = useState({
+  const [step, setStep] = useState<number>(1);
+  const [formData, setFormData] = useState<FormData>({
     username: "",
     email: "",
+    confirmEmail: "",
     password: "",
     confirmPassword: "",
     firstName: "",
     lastName: "",
-    acceptTerms: false,
   });
   
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
+  const [acceptNewsletter, setAcceptNewsletter] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
+  
+  const [passwordCriteria, setPasswordCriteria] = useState<PasswordCriteria>({
+    length: false,
+    specialChar: false,
+    uppercase: false,
+    number: false,
+  });
+  
+  const [usernameCriteria, setUsernameCriteria] = useState<UsernameCriteria>({
+    length: false,
+    noSpaces: true,
+    lowercase: true,
+    notBanned: true,
+  });
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const bannedUsernames = ["admin", "root", "test", "null", "undefined"];
 
   // Nettoyer les erreurs lors des changements
   useEffect(() => {
@@ -36,19 +80,17 @@ export default function SignUpForm() {
     }
   }, [formData, clearError, clearSuccess]);
 
-  // Gestion de la redirection après connexion automatique post-inscription
+  // Gestion de la redirection après connexion automatique
   useEffect(() => {
     if (authState.isAuthenticated && authState.user && registrationSuccess) {
       console.log('✅ [AUTH-SIGNUP] Inscription et connexion réussies, redirection vers dashboard...');
       
-      // Démarrer le compte à rebours
       setRedirectCountdown(3);
       
       const countdown = setInterval(() => {
         setRedirectCountdown((prev) => {
           if (prev === null || prev <= 1) {
             clearInterval(countdown);
-            // Redirection vers le dashboard
             window.location.href = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000/account';
             return null;
           }
@@ -60,49 +102,110 @@ export default function SignUpForm() {
     }
   }, [authState.isAuthenticated, authState.user, registrationSuccess]);
 
-  const validateForm = (): boolean => {
-    const errors: Record<string, string> = {};
+  const handleInputChange = (field: keyof FormData, value: string) => {
+    let processedValue = value;
 
-    // Validation username
-    if (!formData.username.trim()) {
-      errors.username = "Le nom d'utilisateur est requis";
-    } else if (formData.username.length < 4) {
-      errors.username = "Le nom d'utilisateur doit contenir au moins 4 caractères";
+    if (field === "username") {
+      // Convertir en minuscules et supprimer les espaces
+      processedValue = value.toLowerCase().replace(/\s+/g, '');
+      
+      // Mise à jour des critères du nom d'utilisateur
+      setUsernameCriteria({
+        length: processedValue.length >= 4,
+        noSpaces: !processedValue.includes(' '),
+        lowercase: processedValue === processedValue.toLowerCase(),
+        notBanned: !bannedUsernames.includes(processedValue.toLowerCase()),
+      });
     }
 
-    // Validation email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!formData.email.trim()) {
-      errors.email = "L'email est requis";
-    } else if (!emailRegex.test(formData.email)) {
-      errors.email = "Format d'email invalide";
+    if (field === "email" || field === "confirmEmail") {
+      processedValue = value.toLowerCase().trim();
     }
 
-    // Validation password
-    if (!formData.password) {
-      errors.password = "Le mot de passe est requis";
-    } else if (formData.password.length < 8) {
-      errors.password = "Le mot de passe doit contenir au moins 8 caractères";
+    setFormData((prev) => ({
+      ...prev,
+      [field]: processedValue,
+    }));
+
+    if (field === "password") {
+      setPasswordCriteria({
+        length: value.length >= 8, // Ajusté à 8 pour plus de flexibilité
+        specialChar: /[!@#$%^&*(),.?":{}|<>]/.test(value),
+        uppercase: /[A-Z]/.test(value),
+        number: /[0-9]/.test(value),
+      });
     }
 
-    // Validation confirm password
+    // Progression automatique des étapes
+    if (processedValue.trim()) {
+      const fieldToStepMap: Record<keyof FormData, number> = {
+        username: 1,
+        email: 2,
+        confirmEmail: 3,
+        password: 4,
+        confirmPassword: 5,
+        firstName: 6,
+        lastName: 6,
+      };
+      
+      const nextStep = fieldToStepMap[field] + 1;
+      setStep((prev) => Math.max(prev, nextStep));
+    }
+  };
+
+  const validateFields = (): boolean => {
+    const username = formData.username.trim().toLowerCase();
+
+    if (!formData.username.trim() || formData.username.length < 4) {
+      console.error("Validation error: Username too short");
+      return false;
+    }
+
+    if (formData.username.includes(' ')) {
+      console.error("Validation error: Username has spaces");
+      return false;
+    }
+
+    if (bannedUsernames.includes(username)) {
+      console.error("Validation error: Username is banned");
+      return false;
+    }
+
+    if (!formData.email.trim() || !emailRegex.test(formData.email)) {
+      console.error("Validation error: Invalid email");
+      return false;
+    }
+
+    if (formData.email !== formData.confirmEmail) {
+      console.error("Validation error: Emails don't match");
+      return false;
+    }
+
     if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = "Les mots de passe ne correspondent pas";
+      console.error("Validation error: Passwords don't match");
+      return false;
     }
 
-    // Validation terms
-    if (!formData.acceptTerms) {
-      errors.acceptTerms = "Vous devez accepter les conditions d'utilisation";
+    if (!passwordCriteria.length || !passwordCriteria.specialChar || !passwordCriteria.uppercase || !passwordCriteria.number) {
+      console.error("Validation error: Password criteria not met");
+      return false;
     }
 
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
+    if (!acceptTerms) {
+      console.error("Validation error: Terms not accepted");
+      return false;
+    }
+
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) {
+    console.log('🔍 [DEBUG] Form data before validation:', formData);
+    
+    if (!validateFields()) {
+      console.log('❌ [DEBUG] Client validation failed');
       return;
     }
 
@@ -111,8 +214,8 @@ export default function SignUpForm() {
     try {
       console.log('🔄 [AUTH-SIGNUP] Tentative d\'inscription...');
       
-      // Étape 1: Inscription
-      const signupResult = await signup({
+      // Préparer les données normalisées
+      const signupData = {
         username: formData.username,
         email: formData.email,
         password: formData.password,
@@ -120,7 +223,17 @@ export default function SignUpForm() {
         lastName: formData.lastName || undefined,
         enabled: true,
         emailVerified: false,
+      };
+
+      console.log('🔍 [DEBUG] Data being sent:', {
+        username: signupData.username,
+        email: signupData.email,
+        hasFirstName: !!signupData.firstName,
+        hasLastName: !!signupData.lastName
       });
+      
+      // Étape 1: Inscription
+      const signupResult = await signup(signupData);
 
       if (signupResult.success) {
         console.log('✅ [AUTH-SIGNUP] Inscription réussie, connexion automatique...');
@@ -134,10 +247,8 @@ export default function SignUpForm() {
 
         if (loginResult.success) {
           console.log('✅ [AUTH-SIGNUP] Connexion automatique réussie');
-          // La redirection sera gérée par l'useEffect
         } else {
           console.warn('⚠️ [AUTH-SIGNUP] Échec connexion automatique, redirection manuelle');
-          // Afficher un message pour connexion manuelle
           setRedirectCountdown(null);
           setRegistrationSuccess(false);
         }
@@ -150,23 +261,6 @@ export default function SignUpForm() {
       setRegistrationSuccess(false);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-
-    // Nettoyer l'erreur de validation pour ce champ
-    if (validationErrors[name]) {
-      setValidationErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
     }
   };
 
@@ -200,18 +294,6 @@ export default function SignUpForm() {
             </p>
           </div>
 
-          <div className="p-4 bg-green-50 border border-green-200 rounded-md mb-4">
-            <h4 className="text-sm font-medium text-green-900 mb-2">
-              🎉 Votre compte a été créé avec succès !
-            </h4>
-            <ul className="text-xs text-green-700 space-y-1 text-left">
-              <li>• Nom d'utilisateur: {formData.username}</li>
-              <li>• Email: {formData.email}</li>
-              <li>• Connexion automatique activée</li>
-              <li>• Accès au dashboard en cours...</li>
-            </ul>
-          </div>
-
           <button
             onClick={() => {
               window.location.href = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000/account';
@@ -219,9 +301,6 @@ export default function SignUpForm() {
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
           >
             Accéder maintenant au dashboard
-            <svg className="ml-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
           </button>
         </div>
       </div>
@@ -263,171 +342,207 @@ export default function SignUpForm() {
     <div>
       <div className="mb-10">
         <h1 className="text-4xl font-bold">Créez votre compte</h1>
+        <p className="text-gray-600 mt-2">Étape {Math.min(step, 6)} sur 6</p>
       </div>
 
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
-          {/* Nom et Prénom */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Étape 1: Nom d'utilisateur */}
+          {step >= 1 && (
             <div>
-              <label
-                className="mb-1 block text-sm font-medium text-gray-700"
-                htmlFor="firstName"
-              >
-                Prénom
+              <label htmlFor="username" className="mb-1 block text-sm font-medium text-gray-700">
+                Nom d'utilisateur *
+                <span className="text-xs text-gray-500 ml-2">
+                  (converti automatiquement en minuscules)
+                </span>
               </label>
               <input
-                id="firstName"
-                name="firstName"
-                className="form-input w-full py-2"
+                id="username"
                 type="text"
-                placeholder="Votre prénom"
-                value={formData.firstName}
-                onChange={handleChange}
+                className="form-input w-full py-2 lowercase"
+                placeholder="votre-nom-utilisateur"
+                value={formData.username}
+                onChange={(e) => handleInputChange("username", e.target.value)}
+                required
+                disabled={loading || isSubmitting}
+              />
+              <div className="mt-2 text-xs text-gray-500 space-y-1">
+                <div className={usernameCriteria.length ? "text-green-600" : "text-gray-500"}>
+                  ✓ Au moins 4 caractères
+                </div>
+                <div className={usernameCriteria.noSpaces ? "text-green-600" : "text-gray-500"}>
+                  ✓ Pas d'espaces
+                </div>
+                <div className={usernameCriteria.notBanned ? "text-green-600" : "text-red-600"}>
+                  ✓ Nom d'utilisateur disponible
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Étape 2: Email */}
+          {step >= 2 && (
+            <div>
+              <label htmlFor="email" className="mb-1 block text-sm font-medium text-gray-700">
+                Adresse email *
+              </label>
+              <input
+                id="email"
+                type="email"
+                className="form-input w-full py-2"
+                placeholder="votre@email.com"
+                value={formData.email}
+                onChange={(e) => handleInputChange("email", e.target.value)}
+                required
                 disabled={loading || isSubmitting}
               />
             </div>
+          )}
+
+          {/* Étape 3: Confirmation email */}
+          {step >= 3 && (
             <div>
-              <label
-                className="mb-1 block text-sm font-medium text-gray-700"
-                htmlFor="lastName"
-              >
-                Nom
+              <label htmlFor="confirmEmail" className="mb-1 block text-sm font-medium text-gray-700">
+                Confirmer l'email *
               </label>
               <input
-                id="lastName"
-                name="lastName"
+                id="confirmEmail"
+                type="email"
                 className="form-input w-full py-2"
-                type="text"
-                placeholder="Votre nom"
-                value={formData.lastName}
-                onChange={handleChange}
+                placeholder="Confirmez votre email"
+                value={formData.confirmEmail}
+                onChange={(e) => handleInputChange("confirmEmail", e.target.value)}
+                required
                 disabled={loading || isSubmitting}
               />
+              {formData.email && formData.confirmEmail && formData.email !== formData.confirmEmail && (
+                <p className="mt-1 text-sm text-red-600">Les emails ne correspondent pas</p>
+              )}
             </div>
-          </div>
+          )}
 
-          {/* Nom d'utilisateur */}
-          <div>
-            <label
-              className="mb-1 block text-sm font-medium text-gray-700"
-              htmlFor="username"
-            >
-              Nom d'utilisateur *
-            </label>
-            <input
-              id="username"
-              name="username"
-              className={`form-input w-full py-2 ${validationErrors.username ? 'border-red-500' : ''}`}
-              type="text"
-              placeholder="Votre nom d'utilisateur"
-              value={formData.username}
-              onChange={handleChange}
-              required
-              disabled={loading || isSubmitting}
-            />
-            {validationErrors.username && (
-              <p className="mt-1 text-sm text-red-600">{validationErrors.username}</p>
-            )}
-          </div>
+          {/* Étape 4: Mot de passe */}
+          {step >= 4 && (
+            <div>
+              <label htmlFor="password" className="mb-1 block text-sm font-medium text-gray-700">
+                Mot de passe *
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                className="form-input w-full py-2"
+                placeholder="••••••••"
+                value={formData.password}
+                onChange={(e) => handleInputChange("password", e.target.value)}
+                required
+                disabled={loading || isSubmitting}
+              />
+              <div className="mt-2 text-xs space-y-1">
+                <div className={passwordCriteria.length ? "text-green-600" : "text-gray-500"}>
+                  ✓ Au moins 8 caractères
+                </div>
+                <div className={passwordCriteria.specialChar ? "text-green-600" : "text-gray-500"}>
+                  ✓ Au moins un caractère spécial
+                </div>
+                <div className={passwordCriteria.uppercase ? "text-green-600" : "text-gray-500"}>
+                  ✓ Au moins une majuscule
+                </div>
+                <div className={passwordCriteria.number ? "text-green-600" : "text-gray-500"}>
+                  ✓ Au moins un chiffre
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* Email */}
-          <div>
-            <label
-              className="mb-1 block text-sm font-medium text-gray-700"
-              htmlFor="email"
-            >
-              Adresse email *
-            </label>
-            <input
-              id="email"
-              name="email"
-              className={`form-input w-full py-2 ${validationErrors.email ? 'border-red-500' : ''}`}
-              type="email"
-              placeholder="votre@email.com"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              disabled={loading || isSubmitting}
-            />
-            {validationErrors.email && (
-              <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
-            )}
-          </div>
+          {/* Étape 5: Confirmation mot de passe */}
+          {step >= 5 && (
+            <div>
+              <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-gray-700">
+                Confirmer le mot de passe *
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                className="form-input w-full py-2"
+                placeholder="Confirmez votre mot de passe"
+                value={formData.confirmPassword}
+                onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                required
+                disabled={loading || isSubmitting}
+              />
+              {formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                <p className="mt-1 text-sm text-red-600">Les mots de passe ne correspondent pas</p>
+              )}
+            </div>
+          )}
 
-          {/* Mot de passe */}
-          <div>
-            <label
-              className="mb-1 block text-sm font-medium text-gray-700"
-              htmlFor="password"
-            >
-              Mot de passe *
-            </label>
-            <input
-              id="password"
-              name="password"
-              className={`form-input w-full py-2 ${validationErrors.password ? 'border-red-500' : ''}`}
-              type="password"
-              placeholder="Votre mot de passe"
-              value={formData.password}
-              onChange={handleChange}
-              required
-              disabled={loading || isSubmitting}
-            />
-            {validationErrors.password && (
-              <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
-            )}
-          </div>
+          {/* Étape 6: Informations optionnelles */}
+          {step >= 6 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="firstName" className="mb-1 block text-sm font-medium text-gray-700">
+                  Prénom
+                </label>
+                <input
+                  id="firstName"
+                  type="text"
+                  className="form-input w-full py-2"
+                  placeholder="Votre prénom"
+                  value={formData.firstName}
+                  onChange={(e) => handleInputChange("firstName", e.target.value)}
+                  disabled={loading || isSubmitting}
+                />
+              </div>
+              <div>
+                <label htmlFor="lastName" className="mb-1 block text-sm font-medium text-gray-700">
+                  Nom
+                </label>
+                <input
+                  id="lastName"
+                  type="text"
+                  className="form-input w-full py-2"
+                  placeholder="Votre nom"
+                  value={formData.lastName}
+                  onChange={(e) => handleInputChange("lastName", e.target.value)}
+                  disabled={loading || isSubmitting}
+                />
+              </div>
+            </div>
+          )}
 
-          {/* Confirmation mot de passe */}
-          <div>
-            <label
-              className="mb-1 block text-sm font-medium text-gray-700"
-              htmlFor="confirmPassword"
-            >
-              Confirmer le mot de passe *
-            </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              className={`form-input w-full py-2 ${validationErrors.confirmPassword ? 'border-red-500' : ''}`}
-              type="password"
-              placeholder="Confirmez votre mot de passe"
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              required
-              disabled={loading || isSubmitting}
-            />
-            {validationErrors.confirmPassword && (
-              <p className="mt-1 text-sm text-red-600">{validationErrors.confirmPassword}</p>
-            )}
-          </div>
+          {/* Conditions et newsletter */}
+          {step >= 6 && (
+            <>
+              <div className="flex items-center justify-between mt-4">
+                <label htmlFor="acceptTerms" className="text-sm text-gray-700">
+                  J'accepte les <Link href="/terms" className="text-blue-500 hover:underline">conditions d'utilisation</Link> *
+                </label>
+                <div
+                  className={`relative w-12 h-6 ${acceptTerms ? "bg-green-500" : "bg-gray-300"} rounded-full cursor-pointer`}
+                  onClick={() => setAcceptTerms(!acceptTerms)}
+                >
+                  <div
+                    className={`absolute w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${acceptTerms ? "translate-x-6" : ""}`}
+                  ></div>
+                </div>
+              </div>
 
-          {/* Acceptation des conditions */}
-          <div className="flex items-start">
-            <input
-              id="acceptTerms"
-              name="acceptTerms"
-              type="checkbox"
-              className={`h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 ${validationErrors.acceptTerms ? 'border-red-500' : ''}`}
-              checked={formData.acceptTerms}
-              onChange={handleChange}
-              disabled={loading || isSubmitting}
-            />
-            <label htmlFor="acceptTerms" className="ml-2 block text-sm text-gray-700">
-              J'accepte les{" "}
-              <Link href="/terms" className="text-blue-600 underline hover:no-underline">
-                conditions d'utilisation
-              </Link>{" "}
-              et la{" "}
-              <Link href="/privacy" className="text-blue-600 underline hover:no-underline">
-                politique de confidentialité
-              </Link>
-              {" "}*
-            </label>
-          </div>
-          {validationErrors.acceptTerms && (
-            <p className="text-sm text-red-600">{validationErrors.acceptTerms}</p>
+              <div className="flex items-center justify-between mt-4">
+                <label htmlFor="acceptNewsletter" className="text-sm text-gray-700">
+                  S'inscrire à la newsletter
+                </label>
+                <div
+                  className={`relative w-12 h-6 ${acceptNewsletter ? "bg-green-500" : "bg-gray-300"} rounded-full cursor-pointer`}
+                  onClick={() => setAcceptNewsletter(!acceptNewsletter)}
+                >
+                  <div
+                    className={`absolute w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-200 ${acceptNewsletter ? "translate-x-6" : ""}`}
+                  ></div>
+                </div>
+              </div>
+            </>
           )}
         </div>
 
@@ -442,25 +557,27 @@ export default function SignUpForm() {
           </div>
         )}
 
-        <div className="mt-6">
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={loading || isSubmitting || !formData.acceptTerms}
-          >
-            {isSubmitting ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Inscription en cours...
-              </span>
-            ) : (
-              "Créer mon compte"
-            )}
-          </Button>
-        </div>
+        {step >= 6 && (
+          <div className="mt-6">
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading || isSubmitting || !acceptTerms}
+            >
+              {isSubmitting ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Inscription en cours...
+                </span>
+              ) : (
+                "Créer mon compte"
+              )}
+            </Button>
+          </div>
+        )}
       </form>
 
       <div className="mt-6 text-center">

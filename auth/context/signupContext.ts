@@ -1,12 +1,11 @@
+// auth/context/signupContext.ts - VERSION AVEC APPELS GRAPHQL DIRECTS
+
 'use client';
 
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
-import { SMPClient, Persistence } from 'smp-sdk-ts';
-import { 
-  SignupRequest, 
-  SignupResponse 
-} from '@/types/auth';
-import { 
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import { SignupRequest, SignupResponse } from '@/types/auth';
+import { AUTH_CONFIG, validateAuthConfig } from '@/src/config/auth.config';
+import {
   ValidationState, 
   PasswordPolicy, 
   RegistrationStatus,
@@ -16,42 +15,56 @@ import {
   PasswordValidationResult
 } from '@/types/validation';
 
-const storage = new Persistence('localStorage');
+// 🔧 INTERFACES POUR LES APPELS GRAPHQL DIRECTS
+interface AppLoginInput {
+  appID: string;
+  appKey: string;
+}
 
-const smpClient = new SMPClient({
-  appId: process.env.NEXT_PUBLIC_APP_ID || '',
-  appSecret: process.env.NEXT_PUBLIC_APP_SECRET || '',
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000',
-  graphqlUrl: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
-  defaultLanguage: 'fr_FR',
-  appAccessDuration: 30,
-  userAccessDuration: 30,
-  minUserAccessDuration: 30,
-  minAppAccessDuration: 30,
-  persistence: 'localStorage', 
-  storage: storage, 
-});
+interface AppLoginResponse {
+  accessToken: string;
+  refreshToken: string;
+  accessValidityDuration: number;
+  refreshValidityDuration: number;
+  application: {
+    applicationID: string;
+    name?: string;
+    description?: string;
+    plan?: string;
+    isOfficialApp?: boolean;
+  };
+  message: string;
+  errors: string[];
+}
 
+interface GraphQLResponse<T> {
+  data?: T;
+  errors?: Array<{
+    message: string;
+    locations?: Array<{ line: number; column: number }>;
+    path?: Array<string | number>;
+  }>;
+}
+
+import { graphqlService } from '@/src/services/GraphQLServices';
+
+// 🔧 CONTEXTE SIGNUP AVEC SERVICE DIRECT
 interface SignupContextType {
   loading: boolean;
   error: string | null;
   success: string | null;
   
-  // Validation states
   validations: Record<string, ValidationState>;
   passwordPolicy: PasswordPolicy | null;
   registrationStatus: RegistrationStatus | null;
   suggestions: string[];
   
-  // Core signup functions
   signup: (data: SignupRequest, acceptNewsletter?: boolean, organizationID?: string) => Promise<{ success: boolean; response?: SignupResponse }>;
   
-  // Validation functions
   validateField: (field: string, value: string) => Promise<void>;
   validateAllFields: (data: SignupRequest) => Promise<ValidationSummary>;
   generateUsernameSuggestions: (email: string, firstName?: string, lastName?: string) => Promise<void>;
   
-  // Utility functions
   clearError: () => void;
   clearSuccess: () => void;
   clearValidation: (field: string) => void;
@@ -141,12 +154,29 @@ const SignupContext = createContext<SignupContextType | undefined>(undefined);
 export function SignupProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(signupReducer, initialState);
 
-  // Initialisation de la SDK et chargement des données
+  // 🔧 INITIALISATION AVEC SERVICE SIMPLIFIÉ
   useEffect(() => {
-    const initializeSDK = async () => {
+    const initializeService = async () => {
       try {
-        // Initialiser la SDK
-        await smpClient.authenticateApp();
+        console.log('🔧 [SIGNUP] Initialisation du service GraphQL...');
+        
+        // Valider la configuration
+        validateAuthConfig();
+        console.log('✅ [SIGNUP] Configuration validée');
+        
+        // Tester la connexion
+        const connectionTest = await graphqlService.testConnection();
+        if (!connectionTest.success) {
+          throw new Error('Connection test failed: ' + connectionTest.error);
+        }
+        
+        // Authentifier l'application
+        console.log('🔧 [SIGNUP] Authentification de l\'application...');
+        const authResult = await graphqlService.authenticateApp();
+        if (!authResult.success) {
+          throw new Error('App authentication failed: ' + authResult.error);
+        }
+        console.log('✅ [SIGNUP] Application authentifiée avec succès');
         
         // Charger les données initiales
         const [policy, status] = await Promise.all([
@@ -156,20 +186,22 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         
         dispatch({ type: 'SET_PASSWORD_POLICY', payload: policy });
         dispatch({ type: 'SET_REGISTRATION_STATUS', payload: status });
+        
+        console.log('✅ [SIGNUP] Service initialisé avec succès');
+        
       } catch (error: any) {
-        console.error('Failed to initialize SDK:', error);
-        dispatch({ type: 'SET_ERROR', payload: 'Erreur d\'initialisation' });
+        console.error('❌ [SIGNUP] Erreur initialisation:', error);
+        dispatch({ type: 'SET_ERROR', payload: 'Erreur d\'initialisation du système d\'inscription' });
       }
     };
 
-    initializeSDK();
+    initializeService();
   }, []);
 
   // Fonction pour charger la politique de mot de passe
   const loadPasswordPolicy = async (): Promise<PasswordPolicy> => {
-    // En attendant l'implémentation SDK, utiliser les valeurs par défaut
     return {
-      minLength: 12,
+      minLength: 8,
       requireUppercase: true,
       requireLowercase: true,
       requireNumbers: true,
@@ -180,7 +212,6 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
   // Fonction pour charger le statut d'enregistrement
   const loadRegistrationStatus = async (): Promise<RegistrationStatus> => {
-    // En attendant l'implémentation SDK, utiliser les valeurs par défaut
     return {
       registrationEnabled: true,
       emailVerificationRequired: false,
@@ -188,7 +219,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
-  // Fonction principale de signup utilisant la SDK
+  // 🔧 FONCTION SIGNUP AVEC SERVICE DIRECT
   const signup = useCallback(async (
     data: SignupRequest, 
     acceptNewsletter: boolean = false, 
@@ -199,12 +230,28 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_SUCCESS', payload: null });
 
     try {
-      console.log('🔄 [SDK] Starting signup with:', { username: data.username, email: data.email });
+      console.log('🔄 [SIGNUP] Starting signup with:', { 
+        username: data.username, 
+        email: data.email,
+        hasFirstName: !!data.firstName,
+        hasLastName: !!data.lastName
+      });
+
+      // Normaliser les données
+      const normalizedData = {
+        ...data,
+        username: data.username.toLowerCase().trim(),
+        email: data.email.toLowerCase().trim()
+      };
+
+      console.log('🔍 [DEBUG] Normalized data:', normalizedData);
 
       // Validation complète avant l'envoi
-      const validation = await validateAllFields(data);
+      const validation = await validateAllFields(normalizedData);
       
       if (!validation.overall.valid) {
+        console.log('❌ [VALIDATION] Validation failed:', validation.overall.errors);
+        
         Object.entries(validation).forEach(([field, fieldValidation]) => {
           if (field !== 'overall') {
             dispatch({
@@ -224,74 +271,26 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         return { success: false };
       }
 
-      // Créer d'abord le profil si nécessaire
-      let profileID: string | undefined;
-      
-      if (data.firstName || data.lastName) {
-        try {
-          const profileData = await smpClient.profile.createProfile({
-            authorID: '1', // Sera remplacé par l'ID utilisateur après création
-            firstName: data.firstName || '',
-            lastName: data.lastName || '',
-            state: 'online'
-          });
-          profileID = profileData.profileID;
-          console.log('✅ [SDK] Profile created:', profileID);
-        } catch (profileError) {
-          console.warn('⚠️ [SDK] Profile creation failed:', profileError);
-          // Continuer sans profil
-        }
+      // Appel au service GraphQL
+      console.log('🔄 [SIGNUP] Calling GraphQL service...');
+      const response = await graphqlService.createUser({
+        username: normalizedData.username,
+        email: normalizedData.email,
+        password: normalizedData.password,
+        firstName: normalizedData.firstName,
+        lastName: normalizedData.lastName,
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || 'User creation failed');
       }
 
-      // Préparer les données pour la SDK
-      const signupData = {
-        username: data.username,
-        email: data.email,
-        password: data.password,
-        userKind: 'client',
-        state: 'online',
-        profileID: profileID || undefined,
-        plan: 'free',
-        twoFactorEnabled: false,
-        rsaPublicKey: ''
-      };
+      console.log('✅ [SIGNUP] User created successfully:', response);
 
-      // Appel SDK selon le contexte
-      let response: any;
-      
-      if (organizationID) {
-        // Signup après invitation
-        console.log('🏢 [SDK] Signup after invitation to organization:', organizationID);
-        response = await smpClient.manageOrganization.signupAfterInvitation(
-          signupData,
-          organizationID,
-          data.firstName,
-          data.lastName
-        );
-      } else {
-        // Signup normal
-        console.log('👤 [SDK] Normal signup');
-        response = await smpClient.signup.createUser(signupData);
-      }
-
-      console.log('✅ [SDK] Signup successful:', response);
-
-      // Gestion de la newsletter si activée
+      // TODO: Gérer la newsletter si nécessaire
       if (acceptNewsletter && response.userID) {
-        try {
-          await smpClient.mailing.createNewsletterContact({
-            email: data.email,
-            userID: response.userID,
-            isNewsletterSubscriber: true,
-            source: organizationID ? 'signup_invitation' : 'signup_normal',
-            firstName: data.firstName || '',
-            lastName: data.lastName || ''
-          });
-          console.log('✅ [SDK] Newsletter subscription added');
-        } catch (newsletterError) {
-          console.warn('⚠️ [SDK] Newsletter subscription failed:', newsletterError);
-          // Ne pas faire échouer l'inscription pour la newsletter
-        }
+        console.log('📧 [SIGNUP] Newsletter subscription requested for:', response.userID);
+        // Implémenter l'appel newsletter si nécessaire
       }
 
       const successMessage = organizationID 
@@ -305,23 +304,27 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         success: true, 
         response: {
           success: true,
-          userId: response.userID,
-          message: successMessage,
+          userId: response.userID || 'unknown',
+          message: response.message || successMessage,
           verificationEmailSent: false
         }
       };
 
     } catch (error: any) {
-      console.error('❌ [SDK] Signup failed:', error);
+      console.error('❌ [SIGNUP] Signup failed:', error);
       
       let errorMessage = 'Erreur lors de l\'inscription';
       
-      // Analyser l'erreur pour fournir un message plus précis
+      // Analyse d'erreur plus détaillée
       if (error.message) {
         if (error.message.includes('already exist') || error.message.includes('déjà utilisé')) {
           errorMessage = 'Cet email ou nom d\'utilisateur est déjà utilisé';
         } else if (error.message.includes('invalid') || error.message.includes('invalide')) {
           errorMessage = 'Données invalides';
+        } else if (error.message.includes('HTTP')) {
+          errorMessage = 'Erreur de communication avec le serveur';
+        } else if (error.message.includes('Network')) {
+          errorMessage = 'Erreur de connexion réseau';
         } else {
           errorMessage = error.message;
         }
@@ -342,77 +345,77 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
   // Validation de champs individuels
   const validateField = useCallback(async (field: string, value: string) => {
-  if (!value.trim()) {
-    const emptyValidation: ValidationState = {
+    if (!value.trim()) {
+      const emptyValidation: ValidationState = {
+        isValid: false,
+        isValidating: false,
+        errors: [],
+        suggestions: []
+      };
+      
+      dispatch({
+        type: 'SET_FIELD_VALIDATION',
+        payload: { field, validation: emptyValidation }
+      });
+      return;
+    }
+
+    const validatingState: ValidationState = {
       isValid: false,
-      isValidating: false,
+      isValidating: true,
       errors: [],
       suggestions: []
     };
-    
+
     dispatch({
       type: 'SET_FIELD_VALIDATION',
-      payload: { field, validation: emptyValidation }
+      payload: { field, validation: validatingState }
     });
-    return;
-  }
 
-  const validatingState: ValidationState = {
-    isValid: false,
-    isValidating: true,
-    errors: [],
-    suggestions: []
-  };
-
-  dispatch({
-    type: 'SET_FIELD_VALIDATION',
-    payload: { field, validation: validatingState }
-  });
-
-  try {
-    let result;
-    
-    switch (field) {
-      case 'username':
-        result = await validateUsername(value);
-        break;
-      case 'email':
-        result = await validateEmail(value);
-        break;
-      case 'password':
-        result = await validatePassword(value);
-        break;
-      default:
-        throw new Error(`Unknown field: ${field}`);
-    }
+    try {
+      let result;
+      
+      switch (field) {
+        case 'username':
+          result = await validateUsername(value);
+          break;
+        case 'email':
+          result = await validateEmail(value);
+          break;
+        case 'password':
+          result = await validatePassword(value);
+          break;
+        default:
+          throw new Error(`Unknown field: ${field}`);
+      }
 
       const validation: ValidationState = {
-      isValid: result.valid,
-      isValidating: false,
-      errors: result.errors || [],
-      suggestions: result.suggestions || [],
-      lastValidated: new Date().toISOString(),
-      score: 'score' in result ? result.score : undefined
-    };
+        isValid: result.valid,
+        isValidating: false,
+        errors: result.errors || [],
+        suggestions: result.suggestions || [],
+        lastValidated: new Date().toISOString(),
+        score: 'score' in result ? result.score : undefined
+      };
 
-    dispatch({
-      type: 'SET_FIELD_VALIDATION',
-      payload: { field, validation }
-    });
-  } catch (error: any) {
-    const errorValidation: ValidationState = {
-      isValid: false,
-      isValidating: false,
-      errors: [error.message || 'Erreur de validation'],
-      suggestions: []
-    };
+      dispatch({
+        type: 'SET_FIELD_VALIDATION',
+        payload: { field, validation }
+      });
+    } catch (error: any) {
+      const errorValidation: ValidationState = {
+        isValid: false,
+        isValidating: false,
+        errors: [error.message || 'Erreur de validation'],
+        suggestions: []
+      };
 
-    dispatch({
-      type: 'SET_FIELD_VALIDATION',
-      payload: { field, validation: errorValidation }
-    });
-  }
-}, []);
+      dispatch({
+        type: 'SET_FIELD_VALIDATION',
+        payload: { field, validation: errorValidation }
+      });
+    }
+  }, []);
 
   // Fonctions de validation individuelles
   const validateUsername = async (username: string): Promise<UsernameValidationResult> => {
@@ -428,7 +431,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (username !== username.toLowerCase()) {
-      errors.push('Le nom d\'utilisateur doit être en minuscules');
+      suggestions.push(`Suggestion: ${username.toLowerCase()}`);
     }
 
     const bannedUsernames = ['admin', 'root', 'test', 'null', 'undefined'];
@@ -468,8 +471,8 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     const suggestions: string[] = [];
     let score = 0;
 
-    if (password.length < 12) {
-      errors.push('Le mot de passe doit contenir au moins 12 caractères');
+    if (password.length < 8) {
+      errors.push('Le mot de passe doit contenir au moins 8 caractères');
     } else {
       score += 25;
     }
@@ -506,11 +509,23 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
   // Validation de tous les champs
   const validateAllFields = useCallback(async (data: SignupRequest): Promise<ValidationSummary> => {
     try {
+      console.log('🔍 [VALIDATION] Validating fields for:', {
+        username: data.username,
+        email: data.email,
+        hasPassword: !!data.password
+      });
+
       const [usernameResult, emailResult, passwordResult] = await Promise.all([
         validateUsername(data.username),
         validateEmail(data.email),
         validatePassword(data.password)
       ]);
+
+      console.log('🔍 [VALIDATION] Individual results:', {
+        username: { valid: usernameResult.valid, errors: usernameResult.errors },
+        email: { valid: emailResult.valid, errors: emailResult.errors },
+        password: { valid: passwordResult.valid, errors: passwordResult.errors }
+      });
 
       const allErrors = [
         ...usernameResult.errors,
@@ -520,14 +535,14 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
       const summary: ValidationSummary = {
         username: {
-          isValid: usernameResult.valid,
+          isValid: usernameResult.valid && usernameResult.available,
           isValidating: false,
           errors: usernameResult.errors,
           suggestions: usernameResult.suggestions,
           lastValidated: new Date().toISOString()
         },
         email: {
-          isValid: emailResult.valid,
+          isValid: emailResult.valid && emailResult.available,
           isValidating: false,
           errors: emailResult.errors,
           suggestions: [],
@@ -542,11 +557,13 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
           score: passwordResult.score
         },
         overall: {
-          valid: usernameResult.valid && emailResult.valid && passwordResult.valid,
+          valid: usernameResult.valid && usernameResult.available && emailResult.valid && emailResult.available && passwordResult.valid,
           errors: allErrors,
           warnings: []
         }
       };
+
+      console.log('🔍 [VALIDATION] Final summary:', summary);
 
       // Mettre à jour le state avec les validations
       Object.entries(summary).forEach(([field, validation]) => {
@@ -560,6 +577,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
       return summary;
     } catch (error: any) {
+      console.error('❌ [VALIDATION] Validation error:', error);
       throw new Error(error.message || 'Erreur lors de la validation');
     }
   }, []);
