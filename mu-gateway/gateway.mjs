@@ -1,4 +1,4 @@
-// mu-gateway/gateway.mjs - CORRECTION CORS
+// mu-gateway/gateway.mjs - COMPLETE CORS FIX
 import http from 'http';
 import express from 'express';
 import cors from 'cors';
@@ -23,13 +23,11 @@ import {
   RabbitMQService,
 } from 'smp-core-tools';
 
-// Configuration de base
 const serviceListing = process.env.SMP_GATEWAY_MU_SERVICE_LISTING;
 const port = process.env.PORT || 4000;
 
 console.log('🚀 [GATEWAY] Starting with services:', serviceListing);
 
-// Mise à jour du heartbeat
 setInterval(() => {
   global.heartbeat.updateHeartbeat();
 }, global.heartbeat.interval);
@@ -39,12 +37,10 @@ const authorizationGQL = authorizationDirective('authorization');
 
 async function main() {
   try {
-    // Vérification des services disponibles
     const { avalaibleServices, unavailableServices } = await reacheableServices(serviceListing);
     console.log('✅ [GATEWAY] Available Services:', avalaibleServices);
     console.log('⚠️ [GATEWAY] Unavailable Services:', unavailableServices);
 
-    // Configuration du Gateway Apollo avec gestion d'erreur
     const gateway = new ApolloGateway({
       supergraphSdl: new IntrospectAndCompose({
         subgraphs: avalaibleServices,
@@ -57,18 +53,19 @@ async function main() {
         return new RemoteGraphQLDataSource({
           url,
           willSendRequest({ request, context }) {
-            if (context.req?.headers['x-app-id']) {
-              request.http.headers.set('X-App-ID', context.req.headers['x-app-id']);
-            }
-            if (context.req?.headers['x-app-secret']) {
-              request.http.headers.set('X-App-Secret', context.req.headers['x-app-secret']);
-            }
-            if (context.req?.headers['x-app-token']) {
-              request.http.headers.set('X-App-Token', context.req.headers['x-app-token']);
-            }
-            if (context.req?.headers['authorization']) {
-              request.http.headers.set('Authorization', context.req.headers['authorization']);
-            }
+            // Forward all authentication headers
+            const headersToForward = [
+              'x-app-id', 'x-app-secret', 'x-app-token', 
+              'authorization', 'x-client-name', 'x-client-version',
+              'x-request-id', 'x-trace-id'
+            ];
+            
+            headersToForward.forEach(header => {
+              const value = context.req?.headers[header];
+              if (value) {
+                request.http.headers.set(header, value);
+              }
+            });
           },
         });
       },
@@ -77,30 +74,25 @@ async function main() {
     const app = express();
     const httpServer = http.createServer(app);
 
-    // CORRECTION: Configuration CORS plus complète
+    // 🔧 COMPREHENSIVE CORS CONFIGURATION
     const corsOptions = {
       origin: [
-        'http://localhost:3000',  // Auth frontend
-        'http://localhost:3001',  // Auth service (si nécessaire)
-        'http://localhost:3002',  // Dashboard frontend
-        'http://localhost:4000',  // Gateway (pour introspection)
+        'http://localhost:3000',     // Auth app
+        'http://localhost:3001',     // Backup auth
+        'http://localhost:3002',     // Dashboard app
+        'http://localhost:4000',     // Gateway (for introspection)
         'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
         'http://127.0.0.1:3002',
         'http://127.0.0.1:4000',
+        // Add production domains here when needed
       ],
       credentials: true,
-      methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+      methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE', 'PATCH'],
       allowedHeaders: [
+        // Standard headers
         'Content-Type',
         'Authorization',
-        'X-App-ID',
-        'X-App-Secret',
-        'X-App-Token',
-        'X-Request-ID',
-        'X-Trace-ID',
-        'X-Client-Name',
-        'X-Client-Version',      // ✅ Ajouté pour dashboard
-        'X-Services-App-Access',  
         'Accept',
         'Origin',
         'User-Agent',
@@ -110,27 +102,54 @@ async function main() {
         'Keep-Alive',
         'X-Requested-With',
         'If-Modified-Since',
+        
+        // SMP specific headers
+        'X-App-ID',
+        'X-App-Secret', 
+        'X-App-Token',
+        'X-Request-ID',
+        'X-Trace-ID',
+        'X-Client-Name',
+        'X-Client-Version',
+        'X-Services-App-Access',
+        'X-Services-App-ID',      // 🔧 Added for debugging
+        
+        // Custom headers that might be needed
+        'X-Apollo-Operation-Name',
+        'Apollo-Require-Preflight',
       ],
       exposedHeaders: [
         'X-Request-ID',
         'X-Trace-ID',
+        'X-RateLimit-Limit',
+        'X-RateLimit-Remaining',
       ],
-      optionsSuccessStatus: 200, 
+      optionsSuccessStatus: 200,
       preflightContinue: false,
+      maxAge: 86400, // 24 hours
     };
 
     const server = new ApolloServer({
       gateway,
       introspection: true,
+      // 🔧 Enhanced CORS for Apollo
+      csrfPrevention: false, // Disable CSRF for development
+      cors: corsOptions,
       plugins: [
         ApolloServerPluginDrainHttpServer({ httpServer }),
+        // 🔧 Custom plugin for CORS debugging
         {
-          async serverWillStart() {
+          async requestDidStart() {
             return {
-              async drainServer() {
-                console.log('\n🔄 [GATEWAY] Draining Apollo Server...');
-                await server.stop();
-                console.log('✅ [GATEWAY] Apollo Server stopped.');
+              async willSendResponse(requestContext) {
+                const { response, request } = requestContext;
+                
+                // Add CORS headers to GraphQL responses
+                if (request.http?.headers.get('origin')) {
+                  response.http.headers.set('Access-Control-Allow-Origin', 
+                    request.http.headers.get('origin'));
+                  response.http.headers.set('Access-Control-Allow-Credentials', 'true');
+                }
               },
             };
           },
@@ -140,41 +159,70 @@ async function main() {
 
     await server.start();
 
+    // 🔧 GLOBAL CORS MIDDLEWARE - MUST BE FIRST
     app.use(cors(corsOptions));
-    
+
+    // 🔧 EXPLICIT OPTIONS HANDLER
+    app.options('*', cors(corsOptions));
+
+    // 🔧 PREFLIGHT HANDLER FOR COMPLEX REQUESTS
     app.use((req, res, next) => {
+      // Log all requests for debugging
+      console.log(`📨 [GATEWAY] ${req.method} ${req.url} from ${req.headers.origin || 'unknown'}`);
+      
       if (req.method === 'OPTIONS') {
-        res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-        res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+        const origin = req.headers.origin;
+        const requestedHeaders = req.headers['access-control-request-headers'];
+        
+        console.log(`✈️ [GATEWAY] PREFLIGHT - Origin: ${origin}, Headers: ${requestedHeaders}`);
+        
+        // Set comprehensive CORS headers for preflight
+        res.header('Access-Control-Allow-Origin', origin || '*');
+        res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
         res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
         res.header('Access-Control-Allow-Credentials', 'true');
-        res.header('Access-Control-Max-Age', '86400'); // 24 heures
+        res.header('Access-Control-Max-Age', '86400');
+        res.header('Vary', 'Origin, Access-Control-Request-Headers');
+        
         return res.status(200).end();
       }
+      
+      // Set CORS headers for all responses
+      const origin = req.headers.origin;
+      if (origin && corsOptions.origin.includes(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+      }
+      
       next();
     });
 
+    // Standard middleware
     app.use(requestCounter);
     app.use(requestUUIDMiddleware);
-    app.use('/graphql', cors(corsOptions));
-    
-    // Middleware de logging pour debug - AMÉLIORATION
+
+    // 🔧 ENHANCED LOGGING MIDDLEWARE
     app.use('/graphql', (req, res, next) => {
-      console.log('📨 [GATEWAY] Incoming request:', {
+      const requestInfo = {
         method: req.method,
         origin: req.headers.origin,
+        userAgent: req.headers['user-agent']?.substring(0, 50) + '...',
+        contentType: req.headers['content-type'],
         headers: {
-          'content-type': req.headers['content-type'],
           'x-app-id': req.headers['x-app-id'] ? 'PRESENT' : 'MISSING',
-          'x-app-secret': req.headers['x-app-secret'] ? 'PRESENT' : 'MISSING',
+          'x-app-secret': req.headers['x-app-secret'] ? 'PRESENT' : 'MISSING', 
           'x-app-token': req.headers['x-app-token'] ? 'PRESENT' : 'MISSING',
+          'x-client-name': req.headers['x-client-name'] || 'UNKNOWN',
           'authorization': req.headers['authorization'] ? 'PRESENT' : 'MISSING',
         },
-        bodyPresent: !!req.body,
-      });
+        timestamp: new Date().toISOString(),
+      };
+      
+      console.log('📨 [GATEWAY] GraphQL Request:', JSON.stringify(requestInfo, null, 2));
       next();
     });
 
+    // 🔧 GraphQL endpoint with enhanced middleware
     app.use(
       '/graphql',
       express.json({ limit: '150mb' }),
@@ -188,33 +236,69 @@ async function main() {
             authN: authN,
             cache: cache,
           };
+          
           const context = { me: req.auth, ...ctxt };
+          
+          // Enhanced context logging
           ctxt.logger.info(
-            `🔍 [GATEWAY] Context created - ENV: ${appConfig.envExc} - User: ${JSON.stringify(context.me, null, 2)}`
+            `🔍 [GATEWAY] Context - ENV: ${appConfig.envExc} - Client: ${req.headers['x-client-name'] || 'unknown'} - User: ${context.me?.sub || 'anonymous'}`
           );
+          
           return context;
         },
       })
     );
 
-    // Health check endpoint
+    // 🔧 HEALTH CHECK WITH CORS INFO
     app.get('/health', (req, res) => {
       res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
         services: avalaibleServices.length,
         port: port,
-        cors: 'enabled',
+        cors: {
+          enabled: true,
+          origins: corsOptions.origin,
+          credentials: corsOptions.credentials,
+        },
+        environment: {
+          node: process.version,
+          platform: process.platform,
+        },
       });
     });
 
-    // AJOUT: Endpoint de test CORS
+    // 🔧 CORS TEST ENDPOINT
     app.get('/cors-test', (req, res) => {
-      res.json({
-        message: 'CORS is working!',
-        origin: req.headers.origin,
-        method: req.method,
-        headers: Object.keys(req.headers),
+      const corsTestResult = {
+        success: true,
+        message: 'CORS is working correctly!',
+        request: {
+          origin: req.headers.origin,
+          method: req.method,
+          userAgent: req.headers['user-agent'],
+          headers: Object.keys(req.headers).sort(),
+        },
+        cors: {
+          allowedOrigins: corsOptions.origin,
+          allowedMethods: corsOptions.methods,
+          allowedHeaders: corsOptions.allowedHeaders.length,
+          credentialsSupported: corsOptions.credentials,
+        },
+        timestamp: new Date().toISOString(),
+      };
+      
+      console.log('🧪 [GATEWAY] CORS Test successful from:', req.headers.origin);
+      res.json(corsTestResult);
+    });
+
+    // 🔧 ERROR HANDLER
+    app.use((error, req, res, next) => {
+      console.error('❌ [GATEWAY] Unhandled error:', error);
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+        timestamp: new Date().toISOString(),
       });
     });
 
@@ -224,6 +308,7 @@ async function main() {
       console.log(`🔍 [GATEWAY] Health check at http://localhost:${port}/health`);
       console.log(`🧪 [GATEWAY] CORS test at http://localhost:${port}/cors-test`);
       console.log(`📊 [GATEWAY] GraphQL Playground available in development`);
+      console.log(`🌐 [GATEWAY] CORS enabled for origins:`, corsOptions.origin);
     });
   } catch (error) {
     console.error('❌ [GATEWAY] Error starting server:', error);

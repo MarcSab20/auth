@@ -74,7 +74,7 @@
     "remark-gfm": "^4.0.0",
     "sharp": "^0.33.5",
     "slick-carousel": "^1.8.1",
-    "smp-sdk-ts": "github:sylorion/smp-sdk-ts#dev",
+    "smp-sdk-ts": "file:../smp-sdk-ts/smp-sdk-ts-1.0.0.tgz",
     "swapy": "^1.0.5",
     "swr": "^2.3.3",
     "three": "^0.169.0",

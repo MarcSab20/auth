@@ -1,7 +1,7 @@
-// dashboard/context/authenticationContext.tsx - VERSION ROBUSTE AVEC GESTION D'ÉCHECS
+// dashboard/context/authenticationContext.tsx - FIX STABILITÉ ET TIMING
 'use client';
 
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import authAPI from '@/src/services/api/authAPI';
 import { AUTH_CONFIG, validateAuthConfig } from '@/src/config/auth.config';
 import { SharedSessionManager, SessionData } from '@/src/lib/SharedSessionManager';
@@ -29,10 +29,10 @@ interface AuthState {
   error: string | null;
   token: string | null;
   refreshToken: string | null;
-  // Nouveaux états pour gestion robuste
   appAuthFailed: boolean;
   retryCount: number;
   canUseExistingSession: boolean;
+  initializationPhase: 'starting' | 'checking_session' | 'app_auth' | 'user_validation' | 'completed' | 'failed';
 }
 
 interface AuthContextType {
@@ -42,23 +42,19 @@ interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   
-  // Méthodes principales
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
   getCurrentUser: () => Promise<void>;
   validateSession: () => Promise<boolean>;
   clearError: () => void;
   
-  // Méthodes utilitaires
   getUserID: () => string | null;
   testAppAuth: () => Promise<{ success: boolean; error?: string }>;
   redirectToAuth: (returnUrl?: string) => void;
   
-  // Nouvelles méthodes pour gestion robuste
   retryAuth: () => Promise<void>;
   skipAppAuth: () => void;
   
-  // Compatibilité legacy
   authLoading: boolean;
 }
 
@@ -72,6 +68,7 @@ type AuthAction =
   | { type: 'INCREMENT_RETRY'; }
   | { type: 'RESET_RETRY'; }
   | { type: 'SET_CAN_USE_EXISTING_SESSION'; payload: boolean }
+  | { type: 'SET_INITIALIZATION_PHASE'; payload: AuthState['initializationPhase'] }
   | { type: 'CLEAR_AUTH' };
 
 const initialState: AuthState = {
@@ -84,6 +81,7 @@ const initialState: AuthState = {
   appAuthFailed: false,
   retryCount: 0,
   canUseExistingSession: false,
+  initializationPhase: 'starting',
 };
 
 function authReducer(state: AuthState, action: AuthAction): AuthState {
@@ -97,7 +95,8 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
         user: action.payload,
         isAuthenticated: !!action.payload,
         isLoading: false,
-        error: null
+        error: null,
+        initializationPhase: action.payload ? 'completed' : state.initializationPhase
       };
     
     case 'SET_TOKENS':
@@ -113,7 +112,8 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       return { 
         ...state, 
         error: action.payload,
-        isLoading: false
+        isLoading: false,
+        initializationPhase: action.payload ? 'failed' : state.initializationPhase
       };
     
     case 'SET_AUTHENTICATED':
@@ -130,12 +130,16 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 
     case 'SET_CAN_USE_EXISTING_SESSION':
       return { ...state, canUseExistingSession: action.payload };
+
+    case 'SET_INITIALIZATION_PHASE':
+      return { ...state, initializationPhase: action.payload };
     
     case 'CLEAR_AUTH':
       SharedSessionManager.clearSession();
       return {
         ...initialState,
         isLoading: false,
+        initializationPhase: 'completed',
       };
     
     default:
@@ -147,15 +151,18 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const initializationRef = useRef<boolean>(false);
+  const retryTimeoutRef = useRef<NodeJS.Timeout>();
 
   const handleAutoLogout = useCallback(() => {
     dispatch({ type: 'CLEAR_AUTH' });
   }, []);
 
-  // Test de l'authentification app Dashboard avec gestion d'échecs
+  // 🔧 Test de l'authentification app Dashboard avec gestion d'échecs AMÉLIORÉE
   const testAppAuth = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
       console.log('🔧 [DASHBOARD-AUTH] Test authentification application Dashboard...');
+      dispatch({ type: 'SET_INITIALIZATION_PHASE', payload: 'app_auth' });
       
       validateAuthConfig();
       console.log('✅ [DASHBOARD-AUTH] Configuration validée');
@@ -193,33 +200,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = authUrl.toString();
   }, []);
 
-  // Essayer d'utiliser une session existante sans authentification app
+  // 🔧 AMÉLIORATION: Session existante avec validation plus robuste
   const tryUseExistingSession = useCallback(async (): Promise<boolean> => {
     try {
       console.log('🔄 [DASHBOARD-AUTH] Tentative utilisation session existante...');
+      dispatch({ type: 'SET_INITIALIZATION_PHASE', payload: 'checking_session' });
       
       const existingSession = SharedSessionManager.getSession();
       
       if (existingSession && SharedSessionManager.isSessionValid(existingSession)) {
         console.log('✅ [DASHBOARD-AUTH] Session existante trouvée, validation...');
+        dispatch({ type: 'SET_INITIALIZATION_PHASE', payload: 'user_validation' });
         
-        // Essayer de valider directement avec le token existant
-        // (sans authentification app au préalable)
-        const validation = await authAPI.validateUserToken(existingSession.tokens.accessToken);
-        
-        if (validation.valid && validation.user) {
-          dispatch({ 
-            type: 'SET_TOKENS', 
-            payload: { 
-              token: existingSession.tokens.accessToken,
-              refreshToken: existingSession.tokens.refreshToken
-            }
-          });
-          dispatch({ type: 'SET_USER', payload: validation.user });
-          SharedSessionManager.updateActivity();
+        // 🔧 AMÉLIORATION: Validation directe sans app auth préalable
+        try {
+          const validation = await authAPI.validateUserToken(existingSession.tokens.accessToken);
           
-          console.log('✅ [DASHBOARD-AUTH] Session existante validée avec succès');
-          return true;
+          if (validation.valid && validation.user) {
+            dispatch({ 
+              type: 'SET_TOKENS', 
+              payload: { 
+                token: existingSession.tokens.accessToken,
+                refreshToken: existingSession.tokens.refreshToken
+              }
+            });
+            dispatch({ type: 'SET_USER', payload: validation.user });
+            SharedSessionManager.updateActivity();
+            
+            console.log('✅ [DASHBOARD-AUTH] Session existante validée avec succès');
+            return true;
+          } else {
+            console.log('❌ [DASHBOARD-AUTH] Token invalide lors de la validation');
+            SharedSessionManager.clearSession();
+            return false;
+          }
+        } catch (validationError: any) {
+          console.log('⚠️ [DASHBOARD-AUTH] Erreur validation token, essai avec app auth');
+          
+          // Si la validation échoue, essayer avec app auth d'abord
+          const appAuthResult = await testAppAuth();
+          if (appAuthResult.success) {
+            // Réessayer la validation après app auth
+            const validation = await authAPI.validateUserToken(existingSession.tokens.accessToken);
+            if (validation.valid && validation.user) {
+              dispatch({ 
+                type: 'SET_TOKENS', 
+                payload: { 
+                  token: existingSession.tokens.accessToken,
+                  refreshToken: existingSession.tokens.refreshToken
+                }
+              });
+              dispatch({ type: 'SET_USER', payload: validation.user });
+              SharedSessionManager.updateActivity();
+              return true;
+            }
+          }
+          return false;
         }
       }
       
@@ -228,22 +264,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('⚠️ [DASHBOARD-AUTH] Échec validation session existante:', error);
       return false;
     }
-  }, []);
+  }, [testAppAuth]);
 
-  // Nouvelle méthode pour réessayer l'authentification
+  // Nouvelle méthode pour réessayer l'authentification avec délai
   const retryAuth = useCallback(async (): Promise<void> => {
     if (state.retryCount >= 3) {
       console.log('🚫 [DASHBOARD-AUTH] Trop de tentatives, utilisation session existante ou redirection');
       
       const sessionWorked = await tryUseExistingSession();
       if (!sessionWorked) {
-        redirectToAuth();
+        dispatch({ type: 'SET_ERROR', payload: 'Trop de tentatives d\'authentification. Veuillez vous reconnecter.' });
+        // Redirection automatique après 3 secondes
+        retryTimeoutRef.current = setTimeout(() => {
+          redirectToAuth();
+        }, 3000);
       }
       return;
     }
 
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
+    
+    // 🔧 AMÉLIORATION: Délai progressif entre les tentatives
+    const retryDelay = state.retryCount * 1000; // 0s, 1s, 2s
+    if (retryDelay > 0) {
+      console.log(`⏳ [DASHBOARD-AUTH] Attente ${retryDelay}ms avant nouvelle tentative...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
     
     const result = await testAppAuth();
     if (!result.success) {
@@ -259,39 +306,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     tryUseExistingSession().then((success) => {
       if (!success) {
-        redirectToAuth();
+        dispatch({ type: 'SET_ERROR', payload: 'Aucune session valide trouvée' });
+        retryTimeoutRef.current = setTimeout(() => {
+          redirectToAuth();
+        }, 2000);
       }
     });
   }, [tryUseExistingSession, redirectToAuth]);
 
-  // INITIALISATION ROBUSTE avec gestion d'échecs
+  // 🔧 INITIALISATION ROBUSTE ET SÉQUENTIELLE
   useEffect(() => {
+    if (initializationRef.current) {
+      return; // Empêcher les initialisations multiples
+    }
+    initializationRef.current = true;
+
     const initializeAuth = async (): Promise<void> => {
       console.log('🔧 [DASHBOARD-AUTH] Initialisation authentification...');
       dispatch({ type: 'SET_LOADING', payload: true });
+      dispatch({ type: 'SET_INITIALIZATION_PHASE', payload: 'starting' });
       
       try {
-        // 1. D'abord essayer d'utiliser une session existante
+        // 🔧 PHASE 1: Essayer d'utiliser une session existante d'abord
+        console.log('📋 [DASHBOARD-AUTH] Phase 1: Vérification session existante');
         const existingSessionWorked = await tryUseExistingSession();
         if (existingSessionWorked) {
-          return; // Session existante validée, terminé !
+          console.log('✅ [DASHBOARD-AUTH] Session existante validée - initialisation terminée');
+          return;
         }
 
-        // 2. Essayer l'authentification app (avec limites de retry)
+        // 🔧 PHASE 2: Si pas de session, essayer l'authentification app (avec limites)
+        console.log('📋 [DASHBOARD-AUTH] Phase 2: Authentification application');
         if (state.retryCount < 3 && !state.canUseExistingSession) {
           const appAuthResult = await testAppAuth();
           
           if (!appAuthResult.success) {
             console.error('❌ [DASHBOARD-AUTH] Authentification app échouée:', appAuthResult.error);
-            dispatch({ type: 'SET_ERROR', payload: appAuthResult.error || 'Erreur authentification app' });
-            dispatch({ type: 'SET_LOADING', payload: false });
             
-            // Ne pas rediriger immédiatement, laisser l'utilisateur choisir
-            return;
+            // 🔧 AMÉLIORATION: Ne pas abandonner tout de suite, essayer une dernière fois avec session
+            console.log('🔄 [DASHBOARD-AUTH] Tentative finale avec session existante...');
+            const finalAttempt = await tryUseExistingSession();
+            
+            if (!finalAttempt) {
+              dispatch({ type: 'SET_ERROR', payload: appAuthResult.error || 'Erreur authentification app' });
+              dispatch({ type: 'SET_LOADING', payload: false });
+              
+              // Auto-retry après délai si c'est la première tentative
+              if (state.retryCount === 0) {
+                console.log('⏳ [DASHBOARD-AUTH] Première tentative échouée, retry automatique dans 2s...');
+                retryTimeoutRef.current = setTimeout(() => {
+                  retryAuth();
+                }, 2000);
+              }
+              return;
+            }
           }
         }
         
-        // 3. Après auth app réussie, récupérer session
+        // 🔧 PHASE 3: Après auth app réussie, récupérer session
+        console.log('📋 [DASHBOARD-AUTH] Phase 3: Récupération session après auth app');
         const existingSession = SharedSessionManager.getSession();
         
         if (existingSession && SharedSessionManager.isSessionValid(existingSession)) {
@@ -314,11 +387,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } else {
             console.log('❌ [DASHBOARD-AUTH] Token invalide, nettoyage');
             SharedSessionManager.clearSession();
+            dispatch({ type: 'SET_ERROR', payload: 'Token de session invalide' });
             dispatch({ type: 'SET_LOADING', payload: false });
-            redirectToAuth();
           }
         } else {
-          // 4. Essayer de finaliser une transition
+          // 🔧 PHASE 4: Essayer de finaliser une transition
+          console.log('📋 [DASHBOARD-AUTH] Phase 4: Finalisation transition');
           const transitionData = SharedSessionManager.completeTransition();
           
           if (transitionData && SharedSessionManager.isSessionValid(transitionData)) {
@@ -340,16 +414,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } else {
               console.log('❌ [DASHBOARD-AUTH] Token transition invalide');
               SharedSessionManager.clearSession();
+              dispatch({ type: 'SET_ERROR', payload: 'Transition échouée - token invalide' });
               dispatch({ type: 'SET_LOADING', payload: false });
-              redirectToAuth();
             }
           } else {
-            console.log('ℹ️ [DASHBOARD-AUTH] Aucune session trouvée');
+            // 🔧 PHASE 5: Aucune session trouvée - décision finale
+            console.log('📋 [DASHBOARD-AUTH] Phase 5: Aucune session trouvée');
             dispatch({ type: 'SET_LOADING', payload: false });
             
-            // Si on a déjà essayé plusieurs fois l'auth app, rediriger directement
-            if (state.retryCount >= 3 || state.appAuthFailed) {
-              redirectToAuth();
+            // Si on a déjà essayé plusieurs fois l'auth app, rediriger
+            if (state.retryCount >= 2 || state.appAuthFailed) {
+              console.log('🔄 [DASHBOARD-AUTH] Redirection vers auth après échecs multiples');
+              dispatch({ type: 'SET_ERROR', payload: 'Session introuvable. Redirection vers l\'authentification...' });
+              retryTimeoutRef.current = setTimeout(() => {
+                redirectToAuth();
+              }, 1500);
+            } else {
+              // Première tentative, proposer options à l'utilisateur
+              dispatch({ type: 'SET_ERROR', payload: 'Aucune session active trouvée' });
             }
           }
         }
@@ -357,26 +439,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('❌ [DASHBOARD-AUTH] Erreur initialisation:', error);
         dispatch({ type: 'SET_ERROR', payload: error.message || 'Erreur initialisation' });
         dispatch({ type: 'SET_LOADING', payload: false });
+        dispatch({ type: 'SET_INITIALIZATION_PHASE', payload: 'failed' });
       }
     };
 
     initializeAuth();
 
-    // Écouter les changements de session cross-app
+    // Cleanup sur démontage
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []); // Dépendances vides pour exécution unique
+
+  // 🔧 ÉCOUTEUR CHANGEMENTS SESSION - Amélioré pour éviter les boucles
+  useEffect(() => {
     const unsubscribe = SharedSessionManager.onSessionChange((sessionData: SessionData | null) => {
+      // Éviter les mises à jour si on est en cours d'initialisation
+      if (state.initializationPhase === 'starting' || state.initializationPhase === 'checking_session') {
+        console.log('⚠️ [DASHBOARD-AUTH] Changement session ignoré - initialisation en cours');
+        return;
+      }
+
       if (sessionData && SharedSessionManager.isSessionValid(sessionData)) {
         console.log('🔄 [DASHBOARD-AUTH] Session mise à jour depuis autre app');
-        dispatch({ 
-          type: 'SET_TOKENS', 
-          payload: { 
-            token: sessionData.tokens.accessToken, 
-            refreshToken: sessionData.tokens.refreshToken
-          } 
-        });
-        dispatch({ type: 'SET_USER', payload: sessionData.user });
+        if (sessionData.user.userID !== state.user?.userID) {
+          dispatch({ 
+            type: 'SET_TOKENS', 
+            payload: { 
+              token: sessionData.tokens.accessToken, 
+              refreshToken: sessionData.tokens.refreshToken
+            } 
+          });
+          dispatch({ type: 'SET_USER', payload: sessionData.user });
+        }
       } else {
         console.log('🚪 [DASHBOARD-AUTH] Déconnexion depuis autre app');
-        dispatch({ type: 'CLEAR_AUTH' });
+        if (state.isAuthenticated) {
+          dispatch({ type: 'CLEAR_AUTH' });
+        }
       }
     });
 
@@ -385,8 +487,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       unsubscribe();
       window.removeEventListener('auth:logout', handleAutoLogout);
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
     };
-  }, [testAppAuth, redirectToAuth, handleAutoLogout, tryUseExistingSession, state.retryCount, state.appAuthFailed, state.canUseExistingSession]);
+  }, [handleAutoLogout, state.initializationPhase, state.user?.userID, state.isAuthenticated]);
 
   // Déconnexion avec nettoyage session partagée
   const logout = useCallback(async (): Promise<void> => {
@@ -477,6 +582,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearError = useCallback((): void => {
     dispatch({ type: 'SET_ERROR', payload: null });
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+    }
   }, []);
 
   const getUserID = useCallback((): string | null => {
