@@ -8,7 +8,7 @@ export interface ValidationRequest {
 export interface BaseValidationResult {
   valid: boolean;
   errors: string[];
-  suggestions: string[];
+  suggestions?: string[];
 }
 
 export interface ValidationResponse {

@@ -82,12 +82,7 @@ export const AUTHENTICATE_APP_MUTATION = `
 
 export const REGISTER_USER_MUTATION = `
   mutation registerUser($input: CreateUserInput!) {
-    createUser(input: $input) {
-      userID
-      message
-      success
-      errors
-    }
+    registerUser(input: $input)
   }
 `;
 

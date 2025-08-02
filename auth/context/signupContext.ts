@@ -1,4 +1,4 @@
-// auth/context/signupContext.ts - VERSION AVEC APPELS GRAPHQL DIRECTS
+// auth/context/signupContext.ts - VERSION CORRIGÉE AVEC MEILLEURE GESTION D'ERREURS
 
 'use client';
 
@@ -15,40 +15,9 @@ import {
   PasswordValidationResult
 } from '@/types/validation';
 
-// 🔧 INTERFACES POUR LES APPELS GRAPHQL DIRECTS
-interface AppLoginInput {
-  appID: string;
-  appKey: string;
-}
-
-interface AppLoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  accessValidityDuration: number;
-  refreshValidityDuration: number;
-  application: {
-    applicationID: string;
-    name?: string;
-    description?: string;
-    plan?: string;
-    isOfficialApp?: boolean;
-  };
-  message: string;
-  errors: string[];
-}
-
-interface GraphQLResponse<T> {
-  data?: T;
-  errors?: Array<{
-    message: string;
-    locations?: Array<{ line: number; column: number }>;
-    path?: Array<string | number>;
-  }>;
-}
-
 import { graphqlService } from '@/src/services/GraphQLServices';
 
-// 🔧 CONTEXTE SIGNUP AVEC SERVICE DIRECT
+// 🔧 CONTEXTE SIGNUP CORRIGÉ
 interface SignupContextType {
   loading: boolean;
   error: string | null;
@@ -154,29 +123,30 @@ const SignupContext = createContext<SignupContextType | undefined>(undefined);
 export function SignupProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(signupReducer, initialState);
 
-  // 🔧 INITIALISATION AVEC SERVICE SIMPLIFIÉ
+  // 🔧 INITIALISATION AVEC SERVICE CORRIGÉ
   useEffect(() => {
     const initializeService = async () => {
       try {
-        console.log('🔧 [SIGNUP] Initialisation du service GraphQL...');
+        console.log('🔧 [SIGNUP-CONTEXT] Initializing GraphQL service...');
         
         // Valider la configuration
         validateAuthConfig();
-        console.log('✅ [SIGNUP] Configuration validée');
+        console.log('✅ [SIGNUP-CONTEXT] Configuration validated');
         
         // Tester la connexion
         const connectionTest = await graphqlService.testConnection();
         if (!connectionTest.success) {
-          throw new Error('Connection test failed: ' + connectionTest.error);
+          console.warn('⚠️ [SIGNUP-CONTEXT] Connection test failed:', connectionTest.error);
+          // Ne pas bloquer pour un test de connexion raté
         }
         
-        // Authentifier l'application
-        console.log('🔧 [SIGNUP] Authentification de l\'application...');
+        // Authentifier l'application - CRITIQUE
+        console.log('🔧 [SIGNUP-CONTEXT] Authenticating app...');
         const authResult = await graphqlService.authenticateApp();
         if (!authResult.success) {
           throw new Error('App authentication failed: ' + authResult.error);
         }
-        console.log('✅ [SIGNUP] Application authentifiée avec succès');
+        console.log('✅ [SIGNUP-CONTEXT] App authenticated successfully');
         
         // Charger les données initiales
         const [policy, status] = await Promise.all([
@@ -187,11 +157,11 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'SET_PASSWORD_POLICY', payload: policy });
         dispatch({ type: 'SET_REGISTRATION_STATUS', payload: status });
         
-        console.log('✅ [SIGNUP] Service initialisé avec succès');
+        console.log('✅ [SIGNUP-CONTEXT] Service initialized successfully');
         
       } catch (error: any) {
-        console.error('❌ [SIGNUP] Erreur initialisation:', error);
-        dispatch({ type: 'SET_ERROR', payload: 'Erreur d\'initialisation du système d\'inscription' });
+        console.error('❌ [SIGNUP-CONTEXT] Initialization error:', error);
+        dispatch({ type: 'SET_ERROR', payload: 'Erreur d\'initialisation du système d\'inscription: ' + error.message });
       }
     };
 
@@ -219,7 +189,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
-  // 🔧 FONCTION SIGNUP AVEC SERVICE DIRECT
+  // 🔧 FONCTION SIGNUP CORRIGÉE AVEC MEILLEURE GESTION D'ERREURS
   const signup = useCallback(async (
     data: SignupRequest, 
     acceptNewsletter: boolean = false, 
@@ -230,28 +200,37 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_SUCCESS', payload: null });
 
     try {
-      console.log('🔄 [SIGNUP] Starting signup with:', { 
+      console.log('🔄 [SIGNUP-CONTEXT] Starting signup process...', { 
         username: data.username, 
         email: data.email,
         hasFirstName: !!data.firstName,
         hasLastName: !!data.lastName
       });
 
-      // Normaliser les données
+      // 🔧 NORMALISATION STRICTE DES DONNÉES
       const normalizedData = {
         ...data,
         username: data.username.toLowerCase().trim(),
-        email: data.email.toLowerCase().trim()
+        email: data.email.toLowerCase().trim(),
+        firstName: data.firstName?.trim() || '',
+        lastName: data.lastName?.trim() || ''
       };
 
-      console.log('🔍 [DEBUG] Normalized data:', normalizedData);
+      console.log('🔍 [SIGNUP-CONTEXT] Normalized data:', {
+        username: normalizedData.username,
+        email: normalizedData.email,
+        firstName: normalizedData.firstName,
+        lastName: normalizedData.lastName,
+        passwordLength: normalizedData.password.length
+      });
 
-      // Validation complète avant l'envoi
+      // 🔧 VALIDATION COMPLÈTE AVANT ENVOI
       const validation = await validateAllFields(normalizedData);
       
       if (!validation.overall.valid) {
-        console.log('❌ [VALIDATION] Validation failed:', validation.overall.errors);
+        console.log('❌ [SIGNUP-CONTEXT] Validation failed:', validation.overall.errors);
         
+        // Mettre à jour les validations dans le state
         Object.entries(validation).forEach(([field, fieldValidation]) => {
           if (field !== 'overall') {
             dispatch({
@@ -266,30 +245,39 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         
         dispatch({ 
           type: 'SET_ERROR', 
-          payload: 'Veuillez corriger les erreurs avant de continuer' 
+          payload: 'Veuillez corriger les erreurs de validation avant de continuer' 
         });
         return { success: false };
       }
 
-      // Appel au service GraphQL
-      console.log('🔄 [SIGNUP] Calling GraphQL service...');
-      const response = await graphqlService.createUser({
-        username: normalizedData.username,
-        email: normalizedData.email,
-        password: normalizedData.password,
-        firstName: normalizedData.firstName,
-        lastName: normalizedData.lastName,
+      
+
+      // 🔧 APPEL AU SERVICE GRAPHQL AVEC DONNÉES CORRIGÉES
+      console.log('🔄 [SIGNUP-CONTEXT] Calling GraphQL service with auto-detection...');
+        const signupResult = await graphqlService.createUser({
+          username: normalizedData.username,
+          email: normalizedData.email,
+          password: normalizedData.password,
+          firstName: normalizedData.firstName || undefined,
+          lastName: normalizedData.lastName || undefined,
+        });
+
+      console.log('📋 [SIGNUP-CONTEXT] GraphQL service result:', {
+        success: signupResult.success,
+        userID: signupResult.userID,
+        message: signupResult.message,
+        error: signupResult.error
       });
 
-      if (!response.success) {
-        throw new Error(response.error || 'User creation failed');
+      if (!signupResult.success) {
+        throw new Error(signupResult.error || 'User creation failed');
       }
 
-      console.log('✅ [SIGNUP] User created successfully:', response);
+      console.log('✅ [SIGNUP-CONTEXT] User created successfully:', signupResult.userID);
 
       // TODO: Gérer la newsletter si nécessaire
-      if (acceptNewsletter && response.userID) {
-        console.log('📧 [SIGNUP] Newsletter subscription requested for:', response.userID);
+      if (acceptNewsletter && signupResult.userID) {
+        console.log('📧 [SIGNUP-CONTEXT] Newsletter subscription requested for:', signupResult.userID);
         // Implémenter l'appel newsletter si nécessaire
       }
 
@@ -304,26 +292,30 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         success: true, 
         response: {
           success: true,
-          userId: response.userID || 'unknown',
-          message: response.message || successMessage,
+          userId: signupResult.userID || 'unknown',
+          message: signupResult.message || successMessage,
           verificationEmailSent: false
         }
       };
 
     } catch (error: any) {
-      console.error('❌ [SIGNUP] Signup failed:', error);
+      console.error('❌ [SIGNUP-CONTEXT] Signup failed:', error);
       
       let errorMessage = 'Erreur lors de l\'inscription';
       
-      // Analyse d'erreur plus détaillée
+      // 🔧 ANALYSE D'ERREUR AMÉLIORÉE
       if (error.message) {
-        if (error.message.includes('already exist') || error.message.includes('déjà utilisé')) {
+        if (error.message.includes('App authentication')) {
+          errorMessage = 'Erreur d\'authentification de l\'application';
+        } else if (error.message.includes('already exist') || error.message.includes('déjà utilisé')) {
           errorMessage = 'Cet email ou nom d\'utilisateur est déjà utilisé';
-        } else if (error.message.includes('invalid') || error.message.includes('invalide')) {
-          errorMessage = 'Données invalides';
-        } else if (error.message.includes('HTTP')) {
-          errorMessage = 'Erreur de communication avec le serveur';
-        } else if (error.message.includes('Network')) {
+        } else if (error.message.includes('Bad Request') || error.message.includes('validation')) {
+          errorMessage = 'Données invalides - vérifiez votre saisie';
+        } else if (error.message.includes('HTTP 500')) {
+          errorMessage = 'Erreur serveur - veuillez réessayer plus tard';
+        } else if (error.message.includes('HTTP 4')) {
+          errorMessage = 'Erreur de requête - vérifiez vos données';
+        } else if (error.message.includes('Network') || error.message.includes('fetch')) {
           errorMessage = 'Erreur de connexion réseau';
         } else {
           errorMessage = error.message;
@@ -343,7 +335,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Validation de champs individuels
+  // 🔧 VALIDATION DE CHAMPS CORRIGÉE
   const validateField = useCallback(async (field: string, value: string) => {
     if (!value.trim()) {
       const emptyValidation: ValidationState = {
@@ -417,28 +409,37 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Fonctions de validation individuelles
+  // 🔧 FONCTIONS DE VALIDATION RENFORCÉES
   const validateUsername = async (username: string): Promise<UsernameValidationResult> => {
     const errors: string[] = [];
     const suggestions: string[] = [];
 
-    if (username.length < 4) {
-      errors.push('Le nom d\'utilisateur doit contenir au moins 4 caractères');
-    }
+    // Validation côté client ASSOUPLIE
+  if (username.length < 3) { // Réduit de 4 à 3
+    errors.push('Le nom d\'utilisateur doit contenir au moins 3 caractères');
+  }
 
-    if (/\s/.test(username)) {
-      errors.push('Le nom d\'utilisateur ne doit pas contenir d\'espaces');
-    }
+  if (/\s/.test(username)) {
+    errors.push('Le nom d\'utilisateur ne doit pas contenir d\'espaces');
+  }
 
-    if (username !== username.toLowerCase()) {
-      suggestions.push(`Suggestion: ${username.toLowerCase()}`);
-    }
+  if (username !== username.toLowerCase()) {
+    errors.push('Le nom d\'utilisateur doit être en minuscules');
+    suggestions.push(username.toLowerCase());
+  }
 
-    const bannedUsernames = ['admin', 'root', 'test', 'null', 'undefined'];
-    if (bannedUsernames.includes(username.toLowerCase())) {
-      errors.push('Ce nom d\'utilisateur est réservé');
-      suggestions.push(`${username}123`, `${username}_user`, `my_${username}`);
-    }
+  // 🔧 CARACTÈRES AUTORISÉS ASSOUPLIS - ACCEPTER PLUS DE CARACTÈRES
+  if (!/^[a-z0-9._-]+$/.test(username)) { // Ajout du point (.)
+    errors.push('Le nom d\'utilisateur ne peut contenir que des lettres minuscules, chiffres, points, tirets et underscores');
+  }
+
+  // 🔧 LISTE RÉDUITE DES NOMS INTERDITS
+  const bannedUsernames = ['admin', 'root', 'system']; // Liste réduite
+  if (bannedUsernames.includes(username.toLowerCase())) {
+    errors.push('Ce nom d\'utilisateur est réservé');
+    suggestions.push(`${username}123`, `${username}_user`, `my_${username}`);
+  }
+    
 
     return {
       valid: errors.length === 0,
@@ -450,19 +451,21 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
   const validateEmail = async (email: string): Promise<EmailValidationResult> => {
     const errors: string[] = [];
-    const suggestions: string[] = [];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email)) {
       errors.push('Format d\'email invalide');
     }
 
+    if (!emailRegex.test(email)) {
+    errors.push('Format d\'email invalide');
+  }
+
     return {
       valid: errors.length === 0,
       available: errors.length === 0,
       deliverable: errors.length === 0,
-      errors,
-      suggestions
+      errors
     };
   };
 
@@ -498,6 +501,18 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
       score += 25;
     }
 
+    // Vérifications supplémentaires
+    if (password.length > 128) {
+      errors.push('Le mot de passe est trop long (maximum 128 caractères)');
+    }
+
+    // Mots de passe communs interdits
+    const commonPasswords = ['password', '123456', 'qwerty', 'admin'];
+    if (commonPasswords.some(common => password.toLowerCase().includes(common))) {
+      errors.push('Le mot de passe ne doit pas contenir de mots communs');
+      score = Math.max(0, score - 50);
+    }
+
     return {
       valid: errors.length === 0,
       errors,
@@ -509,7 +524,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
   // Validation de tous les champs
   const validateAllFields = useCallback(async (data: SignupRequest): Promise<ValidationSummary> => {
     try {
-      console.log('🔍 [VALIDATION] Validating fields for:', {
+      console.log('🔍 [SIGNUP-CONTEXT] Validating all fields for:', {
         username: data.username,
         email: data.email,
         hasPassword: !!data.password
@@ -521,7 +536,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         validatePassword(data.password)
       ]);
 
-      console.log('🔍 [VALIDATION] Individual results:', {
+      console.log('🔍 [SIGNUP-CONTEXT] Individual validation results:', {
         username: { valid: usernameResult.valid, errors: usernameResult.errors },
         email: { valid: emailResult.valid, errors: emailResult.errors },
         password: { valid: passwordResult.valid, errors: passwordResult.errors }
@@ -538,8 +553,8 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
           isValid: usernameResult.valid && usernameResult.available,
           isValidating: false,
           errors: usernameResult.errors,
-          suggestions: usernameResult.suggestions,
-          lastValidated: new Date().toISOString()
+          lastValidated: new Date().toISOString(),
+          suggestions: []
         },
         email: {
           isValid: emailResult.valid && emailResult.available,
@@ -552,7 +567,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
           isValid: passwordResult.valid,
           isValidating: false,
           errors: passwordResult.errors,
-          suggestions: passwordResult.suggestions,
+          suggestions: [],
           lastValidated: new Date().toISOString(),
           score: passwordResult.score
         },
@@ -563,7 +578,11 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
         }
       };
 
-      console.log('🔍 [VALIDATION] Final summary:', summary);
+      console.log('🔍 [SIGNUP-CONTEXT] Final validation summary:', {
+        overall: summary.overall.valid,
+        errorCount: allErrors.length,
+        errors: allErrors
+      });
 
       // Mettre à jour le state avec les validations
       Object.entries(summary).forEach(([field, validation]) => {
@@ -577,7 +596,7 @@ export function SignupProvider({ children }: { children: React.ReactNode }) {
 
       return summary;
     } catch (error: any) {
-      console.error('❌ [VALIDATION] Validation error:', error);
+      console.error('❌ [SIGNUP-CONTEXT] Validation error:', error);
       throw new Error(error.message || 'Erreur lors de la validation');
     }
   }, []);
