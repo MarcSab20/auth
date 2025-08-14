@@ -52,7 +52,7 @@ export default function OAuthCallbackPage() {
 
         console.log(`🔄 [OAUTH-CALLBACK] Processing ${oauthProvider} ${oauthAction} with code:`, code.substring(0, 10) + '...');
 
-        // Traiter le callback via GraphQL
+        // Traiter le callback via votre backend mu-auth
         const response = await fetch(`${AUTH_CONFIG.GRAPHQL_URL}`, {
           method: 'POST',
           headers: {
@@ -76,12 +76,14 @@ export default function OAuthCallbackPage() {
                     username
                     verified
                     provider
+                    avatarUrl
                   }
                   tokens {
                     accessToken
                     refreshToken
                     tokenType
                     expiresIn
+                    idToken
                   }
                   message
                 }
@@ -92,6 +94,8 @@ export default function OAuthCallbackPage() {
                 provider: oauthProvider,
                 code,
                 state,
+                error: error,
+                errorDescription: errorDescription
               },
             },
           }),

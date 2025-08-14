@@ -1,6 +1,6 @@
 // auth/src/app/layout.tsx - AVEC OAUTH PROVIDER
 
-import './css/style.css'
+import '../css/style.css'
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/context/authenticationContext";
 import { SignupProvider } from "@/context/signupContext";
