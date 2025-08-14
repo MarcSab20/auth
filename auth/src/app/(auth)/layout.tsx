@@ -1,79 +1,89 @@
-// src/app/(auth)/layout.tsx - AVEC SIGNUPPROVIDER
-import Image from "next/image";
-import Logo from "@/src/components/design/headerLogo";
-import AuthBg from "@/public/images/auth-bg.svg";
-import Pattern2 from "@/public/images/Pattern-2.svg";
-import Pattern3 from "@/public/images/Pattern-3.svg";
-import Pattern5 from "@/public/images/Pattern-4.svg";
-import Pattern7 from "@/public/images/Pattern-7.svg";
-import Pattern8 from "@/public/images/Pattern-8.svg";
-import Link from "next/link";
-import { SignupProvider } from "@/context/signupContext"; // AJOUTER CECI
+// auth/src/app/layout.tsx - AVEC OAUTH PROVIDER
 
-const patterns = [Pattern2, Pattern3, Pattern5, Pattern7, Pattern8];
+import './css/style.css'
+import { Inter } from "next/font/google";
+import { AuthProvider } from "@/context/authenticationContext";
+import { SignupProvider } from "@/context/signupContext";
+import { OAuthProvider } from "@/context/oauthContext"; // AJOUT OAUTH PROVIDER
+import { MagicLinkProvider } from "@/context/magicLinkContext";
+import { WaitingListSignupProvider } from "@/context/waitingListSignupContext";
+import { SignupInvitationProvider } from "@/context/signupInvitationContext";
+import ConfigDebug from "@/src/components/debug/ConfigDebug";
+import GraphQLIntrospection from "@/src/components/debug/GraphQLIntrospection";
+import SignupTest from "@/src/components/debug/SignupTest";
+import type { Metadata } from 'next'
+import type React from 'react'
 
-export default function AuthLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "Services - Authentication SDK",
+  description: "Authentication module for Services platform powered by SMP SDK with OAuth support",
+  icons: {
+    icon: "/images/LOGOROUGE.png",
+    apple: "/images/LOGOROUGE.png",
+  },
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <SignupProvider> {/* ENVELOPPER AVEC LE PROVIDER */}
-      <header className="absolute z-30 w-full">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex h-16 items-center justify-between md:h-20">
-            {/* Site branding */}
-            <div className="mr-4 shrink-0">
-              <Link href="/" className="shadow hover:bg-gray-900">
-                <Logo />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
-      
-      <main className="relative flex grow">
-        <div
-          className="pointer-events-none absolute bottom-0 left-0 -translate-x-1/3"
-          aria-hidden="true"
-        >
-          <div className="h-80 w-80 rounded-full bg-gradient-to-tr from-blue-500 opacity-70 blur-[160px]"></div>
-        </div>
-
-        {/* Content */}
-        <div className="w-full">
-          <div className="flex h-full flex-col justify-center before:min-h-[4rem] before:flex-1 after:flex-1 md:before:min-h-[5rem]">
-            <div className="px-4 sm:px-6">
-              <div className="mx-auto w-full max-w-sm">
-                <div className="py-16 md:py-20">{children}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <>
-          {/* Right side */}
-          <div className="relative my-6 mr-6 hidden w-[572px] shrink-0 overflow-hidden rounded-2xl lg:block">
-            {/* Background */}
-            <div
-              className="pointer-events-none absolute left-1/2 top-1/2 -z-10 -ml-24 -translate-x-1/2 -translate-y-1/2 bg-blue-50"
-              aria-hidden="true"
-            >
-              <Image
-                src={patterns[(Math.floor(Math.random() * patterns.length))]} 
-                className="max-w-none"
-                width={1285}
-                height={1684}
-                alt="Auth bg"
-              />
-            </div>
-            {/* Illustration */}
-            <div className="absolute left-32 top-1/2 w-[500px] -translate-y-1/2">
-              {/* Votre contenu d'illustration ici */}
-            </div>
-          </div>
-        </>
-      </main>
-    </SignupProvider> 
+    <html
+      lang="en"
+      className={`${inter.className} antialiased`}
+    >
+      <head>
+        <link rel="preconnect" href="https://rsms.me/" />
+        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Configuration globale SDK avec OAuth
+              window.SMP_CONFIG = {
+                APP_ID: '${process.env.NEXT_PUBLIC_AUTH_APP_ID || ''}',
+                API_URL: '${process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:4000'}',
+                GRAPHQL_URL: '${process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql'}',
+                MAGIC_LINK_ENABLED: ${process.env.NEXT_PUBLIC_MAGIC_LINK_ENABLED !== 'false'},
+                OAUTH_ENABLED: true,
+                GITHUB_OAUTH_ENABLED: ${process.env.NEXT_PUBLIC_GITHUB_OAUTH_ENABLED !== 'false'},
+                GOOGLE_OAUTH_ENABLED: ${process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED !== 'false'},
+                DEBUG: ${process.env.NODE_ENV === 'development'}
+              };
+              console.log('🔧 SMP_CONFIG loaded with OAuth:', window.SMP_CONFIG);
+            `,
+          }}
+        />
+      </head>
+      <body className="bg-white font-chillax text-zinc-950 antialiased lg:bg-white dark:bg-zinc-900 dark:text-white">
+        {/* Provider unifié avec SDK et OAuth */}
+        <AuthProvider>
+          <OAuthProvider> {/* AJOUT DU OAUTH PROVIDER */}
+            <MagicLinkProvider>
+              <SignupProvider>
+                {/* Providers de compatibilité pour des cas spéciaux */}
+                <SignupInvitationProvider>
+                  <WaitingListSignupProvider>
+                    <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
+                      {children}
+                    </div>
+                    
+                    {/* 🔧 OUTILS DE DEBUG - uniquement en développement */}
+                    {process.env.NODE_ENV === 'development' && (
+                      <>
+                        <SignupTest />
+                        <ConfigDebug />
+                        <GraphQLIntrospection />
+                      </>
+                    )}
+                  </WaitingListSignupProvider>
+                </SignupInvitationProvider>
+              </SignupProvider>
+            </MagicLinkProvider>
+          </OAuthProvider>
+        </AuthProvider>
+      </body>
+    </html>
   );
 }

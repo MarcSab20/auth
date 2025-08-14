@@ -1,4 +1,4 @@
-// auth/src/middleware.ts - CORRECTION DE LA BOUCLE INFINIE
+// auth/src/middleware.ts - AVEC ROUTES OAUTH
 import { NextRequest, NextResponse } from "next/server";
 
 export async function middleware(req: NextRequest) {
@@ -15,6 +15,7 @@ export async function middleware(req: NextRequest) {
     "/reset-password",
     "/magic-link",
     "/magic-link-request",
+    "/oauth",           // AJOUT: Routes OAuth
     "/transition",
     "/api",
     "/_next",
@@ -30,6 +31,12 @@ export async function middleware(req: NextRequest) {
   
   if (isPublicRoute) {
     console.log(`✅ [MIDDLEWARE] Route publique autorisée: ${pathname}`);
+    return NextResponse.next();
+  }
+
+  // Routes OAuth spécifiques - AUTORISER EXPLICITEMENT
+  if (pathname.startsWith('/oauth/')) {
+    console.log(`✅ [MIDDLEWARE] Route OAuth autorisée: ${pathname}`);
     return NextResponse.next();
   }
 
