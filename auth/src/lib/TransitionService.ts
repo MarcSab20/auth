@@ -49,7 +49,7 @@ export class TransitionService {
     localStorage.setItem(this.SESSION_KEYS.USER_DATA, JSON.stringify(user));
     localStorage.setItem(this.SESSION_KEYS.SESSION_ID, transitionData.sessionId);
 
-    // Créer cookie utilisateur pour le serveur
+
     const userCookie = {
       userID: user.userID,
       username: user.username,

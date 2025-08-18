@@ -7,9 +7,6 @@ import { SignupProvider } from "@/context/signupContext";
 import { MagicLinkProvider } from "@/context/magicLinkContext";
 import { WaitingListSignupProvider } from "@/context/waitingListSignupContext";
 import { SignupInvitationProvider } from "@/context/signupInvitationContext";
-import ConfigDebug from "@/src/components/debug/ConfigDebug";
-import GraphQLIntrospection from "@/src/components/debug/GraphQLIntrospection";
-import SignupTest from "@/src/components/debug/SignupTest";
 import type { Metadata } from 'next'
 import type React from 'react'
 
@@ -64,14 +61,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     {children}
                   </div>
                   
-                  {/* 🔧 OUTILS DE DEBUG - uniquement en développement */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <>
-                      <SignupTest />
-                      <ConfigDebug />
-                      <GraphQLIntrospection />
-                    </>
-                  )}
                 </WaitingListSignupProvider>
               </SignupInvitationProvider>
             </SignupProvider>

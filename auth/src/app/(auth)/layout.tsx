@@ -1,16 +1,11 @@
-// auth/src/app/layout.tsx - AVEC OAUTH PROVIDER
-
 import '../css/style.css'
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/context/authenticationContext";
 import { SignupProvider } from "@/context/signupContext";
-import { OAuthProvider } from "@/context/oauthContext"; // AJOUT OAUTH PROVIDER
+import { OAuthProvider } from "@/context/oauthContext"; 
 import { MagicLinkProvider } from "@/context/magicLinkContext";
 import { WaitingListSignupProvider } from "@/context/waitingListSignupContext";
 import { SignupInvitationProvider } from "@/context/signupInvitationContext";
-import ConfigDebug from "@/src/components/debug/ConfigDebug";
-import GraphQLIntrospection from "@/src/components/debug/GraphQLIntrospection";
-import SignupTest from "@/src/components/debug/SignupTest";
 import type { Metadata } from 'next'
 import type React from 'react'
 
@@ -68,15 +63,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
                       {children}
                     </div>
-                    
-                    {/* 🔧 OUTILS DE DEBUG - uniquement en développement */}
-                    {process.env.NODE_ENV === 'development' && (
-                      <>
-                        <SignupTest />
-                        <ConfigDebug />
-                        <GraphQLIntrospection />
-                      </>
-                    )}
                   </WaitingListSignupProvider>
                 </SignupInvitationProvider>
               </SignupProvider>

@@ -1,4 +1,4 @@
-// auth/context/authenticationContext.tsx - VERSION AVEC TRANSITION
+// auth/context/authenticationContext.tsx 
 'use client';
 
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';

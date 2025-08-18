@@ -70,15 +70,12 @@ const OrganizationCreationCarouselContent = () => {
   };
 
   const goToNextStep = async () => {
-    // Si sur la dernière étape, lancer la soumission
     if (currentStep === steps.length - 1) {
-      // Si déjà en cours, ne rien faire
       if (submitting) return;
       setSubmitting(true);
       try {
         await submitOrganization();
       } catch (error) {
-        // En cas d'erreur, réactiver le bouton
         setSubmitting(false);
       }
       return;

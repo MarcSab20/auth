@@ -99,7 +99,6 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Cookie pour les infos utilisateur (accessible côté client)
       if (result.userInfo) {
         const userCookie = {
           userID: result.userInfo.sub,

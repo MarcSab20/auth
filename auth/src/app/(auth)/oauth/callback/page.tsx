@@ -1,4 +1,3 @@
-// auth/src/app/(auth)/oauth/callback/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -24,12 +23,38 @@ export default function OAuthCallbackPage() {
     message: 'Traitement du callback OAuth...',
   });
 
+  const [oauthData, setOauthData] = useState<{
+    action: string;
+    provider: string;
+    state: string;
+  } | null>(null);
+
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const action = localStorage.getItem('oauth_action') || 'login';
+      const provider = localStorage.getItem('oauth_provider') || 'github';
+      const storedState = localStorage.getItem('oauth_state') || '';
+      
+      setOauthData({ action, provider, state: storedState });
+      
+      console.log('🔍 [OAUTH-CALLBACK] OAuth data retrieved:', {
+        action,
+        provider,
+        hasStoredState: !!storedState,
+        receivedState: state?.substring(0, 10) + '...'
+      });
+    }
+  }, [state]);
+
+  useEffect(() => {
+    // Attendre que les données OAuth soient chargées
+    if (!oauthData) return;
+
     const handleOAuthCallback = async () => {
       try {
         // Vérifier les paramètres d'erreur
@@ -41,16 +66,17 @@ export default function OAuthCallbackPage() {
           throw new Error('Paramètres OAuth manquants');
         }
 
+        // 🔧 FIX: Vérifier la correspondance de l'état
+        if (oauthData.state && oauthData.state !== state) {
+          throw new Error('État OAuth non valide - possible attaque CSRF');
+        }
+
         setCallbackState({
           status: 'processing',
           message: 'Traitement de l\'authentification OAuth...',
         });
 
-        // Récupérer les informations stockées
-        const oauthAction = localStorage.getItem('oauth_action') || 'login';
-        const oauthProvider = localStorage.getItem('oauth_provider') || 'github';
-
-        console.log(`🔄 [OAUTH-CALLBACK] Processing ${oauthProvider} ${oauthAction} with code:`, code.substring(0, 10) + '...');
+        console.log(`🔄 [OAUTH-CALLBACK] Processing ${oauthData.provider} ${oauthData.action} with code:`, code.substring(0, 10) + '...');
 
         // Traiter le callback via votre backend mu-auth
         const response = await fetch(`${AUTH_CONFIG.GRAPHQL_URL}`, {
@@ -91,7 +117,7 @@ export default function OAuthCallbackPage() {
             `,
             variables: {
               input: {
-                provider: oauthProvider,
+                provider: oauthData.provider,
                 code,
                 state,
                 error: error,
@@ -150,13 +176,16 @@ export default function OAuthCallbackPage() {
 
         setCallbackState({
           status: 'success',
-          message: `Connexion ${oauthProvider} réussie !`,
+          message: `Connexion ${oauthData.provider} réussie !`,
           countdown: 3,
         });
 
         // Nettoyer localStorage
-        localStorage.removeItem('oauth_action');
-        localStorage.removeItem('oauth_provider');
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('oauth_action');
+          localStorage.removeItem('oauth_provider');
+          localStorage.removeItem('oauth_state');
+        }
 
         // Démarrer le compte à rebours
         let countdown = 3;
@@ -182,8 +211,11 @@ export default function OAuthCallbackPage() {
         console.error('❌ [OAUTH-CALLBACK] Error processing callback:', error);
         
         // Nettoyer localStorage en cas d'erreur
-        localStorage.removeItem('oauth_action');
-        localStorage.removeItem('oauth_provider');
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('oauth_action');
+          localStorage.removeItem('oauth_provider');
+          localStorage.removeItem('oauth_state');
+        }
         
         setCallbackState({
           status: 'error',
@@ -194,7 +226,7 @@ export default function OAuthCallbackPage() {
     };
 
     handleOAuthCallback();
-  }, [code, state, error, errorDescription]);
+  }, [code, state, error, errorDescription, oauthData]);
 
   const handleRetry = () => {
     router.push('/signin');
@@ -331,7 +363,7 @@ export default function OAuthCallbackPage() {
           )}
 
           {/* Informations de debug en développement */}
-          {process.env.NODE_ENV === 'development' && (
+          {process.env.NODE_ENV === 'development' && oauthData && (
             <div className="mt-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
               <div className="text-left">
                 <h4 className="text-xs font-medium text-gray-900 mb-2">
@@ -342,8 +374,9 @@ export default function OAuthCallbackPage() {
                   <p><strong>Code:</strong> {code ? code.substring(0, 10) + '...' : 'N/A'}</p>
                   <p><strong>State:</strong> {state ? state.substring(0, 10) + '...' : 'N/A'}</p>
                   <p><strong>Error:</strong> {error || 'None'}</p>
-                  <p><strong>Provider:</strong> {localStorage.getItem('oauth_provider') || 'N/A'}</p>
-                  <p><strong>Action:</strong> {localStorage.getItem('oauth_action') || 'N/A'}</p>
+                  <p><strong>Provider:</strong> {oauthData.provider}</p>
+                  <p><strong>Action:</strong> {oauthData.action}</p>
+                  <p><strong>State Match:</strong> {oauthData.state === state ? '✅ Valid' : '❌ Invalid'}</p>
                 </div>
               </div>
             </div>

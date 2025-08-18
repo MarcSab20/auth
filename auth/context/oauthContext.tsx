@@ -1,4 +1,4 @@
-// auth/context/oauthContext.tsx - VERSION INTÉGRÉE AVEC BACKEND MU-AUTH
+// auth/context/oauthContext.tsx 
 'use client';
 
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
@@ -64,6 +64,20 @@ const OAuthContext = createContext<OAuthContextType | undefined>(undefined);
 
 export function OAuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(oauthReducer, initialState);
+
+  // 🔧 FIX: Fonction pour générer un état sécurisé
+  const generateSecureState = useCallback((): string => {
+    const array = new Uint8Array(32);
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(array);
+    } else {
+      // Fallback pour les environnements sans crypto API
+      for (let i = 0; i < array.length; i++) {
+        array[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  }, []);
 
   // Obtenir les providers disponibles depuis le backend
   const getAvailableProviders = useCallback(async (): Promise<OAuthProvider[]> => {
@@ -132,12 +146,37 @@ export function OAuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('❌ [OAUTH-CONTEXT] Error fetching providers from backend:', error);
       
-      // Si le backend n'est pas disponible, retourner un tableau vide
-      // L'utilisateur verra un message "Aucun provider OAuth disponible"
-      dispatch({ type: 'SET_ERROR', payload: 'Backend OAuth non disponible' });
-      dispatch({ type: 'SET_PROVIDERS', payload: [] });
+      // 🔧 FIX: Fallback vers des providers par défaut basés sur la configuration
+      const fallbackProviders: OAuthProvider[] = [];
       
-      return [];
+      // Vérifier GitHub OAuth depuis la config
+      if (AUTH_CONFIG.AUTH_APP.APP_ID && process.env.NEXT_PUBLIC_GITHUB_OAUTH_ENABLED === 'true') {
+        fallbackProviders.push({
+          name: 'github',
+          displayName: 'GitHub',
+          enabled: true,
+          configured: true,
+          scopes: ['user:email', 'read:user'],
+          description: 'Connexion avec GitHub'
+        });
+      }
+      
+      // Vérifier Google OAuth depuis la config
+      if (AUTH_CONFIG.AUTH_APP.APP_ID && process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === 'true') {
+        fallbackProviders.push({
+          name: 'google',
+          displayName: 'Google',
+          enabled: true,
+          configured: true,
+          scopes: ['openid', 'email', 'profile'],
+          description: 'Connexion avec Google'
+        });
+      }
+
+      dispatch({ type: 'SET_ERROR', payload: 'Backend OAuth temporairement indisponible - mode fallback actif' });
+      dispatch({ type: 'SET_PROVIDERS', payload: fallbackProviders });
+      
+      return fallbackProviders;
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -153,6 +192,10 @@ export function OAuthProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_ERROR', payload: null });
 
       console.log(`🔐 [OAUTH-CONTEXT] Initiating ${provider} OAuth via backend for ${action}...`);
+
+      // 🔧 FIX: Générer un état sécurisé
+      const secureState = generateSecureState();
+      console.log('🔒 [OAUTH-CONTEXT] Generated secure state:', secureState.substring(0, 8) + '...');
 
       // 1. Générer l'URL d'autorisation via le backend
       const response = await fetch(`${AUTH_CONFIG.GRAPHQL_URL}`, {
@@ -204,9 +247,14 @@ export function OAuthProvider({ children }: { children: React.ReactNode }) {
         console.log(`🚀 [OAUTH-CONTEXT] Backend generated URL for ${provider}:`, oauthData.authUrl);
         
         // 2. Stocker l'action et le state dans localStorage pour le callback
-        localStorage.setItem('oauth_action', action);
-        localStorage.setItem('oauth_provider', provider);
-        localStorage.setItem('oauth_state', oauthData.state);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('oauth_action', action);
+          localStorage.setItem('oauth_provider', provider);
+          // 🔧 FIX: Utiliser l'état retourné par le backend ou notre état sécurisé comme fallback
+          localStorage.setItem('oauth_state', oauthData.state || secureState);
+          
+          console.log('💾 [OAUTH-CONTEXT] OAuth data stored in localStorage');
+        }
         
         dispatch({ type: 'SET_REDIRECTING', payload: true });
         
@@ -217,13 +265,13 @@ export function OAuthProvider({ children }: { children: React.ReactNode }) {
       }
 
     } catch (error: any) {
-      console.error(`❌ [OAUTH-CONTEXT] Error initiating ${provider} OAuth via backend:`, error);
+      console.error(`❌ [OAUTH-CONTEXT] Direct OAuth fallback failed for ${provider}:`, error);
       dispatch({ 
         type: 'SET_ERROR', 
-        payload: error.message || `Erreur lors de l'initialisation OAuth ${provider}` 
+        payload: `Échec de l'OAuth direct pour ${provider}: ${error.message}` 
       });
     }
-  }, []);
+  }, [generateSecureState]);
 
   const clearError = useCallback(() => {
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -249,4 +297,4 @@ export function useOAuth(): OAuthContextType {
     throw new Error('useOAuth must be used within an OAuthProvider');
   }
   return context;
-}
+} 
