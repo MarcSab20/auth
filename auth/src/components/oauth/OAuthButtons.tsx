@@ -1,8 +1,7 @@
-// auth/src/components/oauth/OAuthButtons.tsx - VERSION CORRIGÉE
+// auth/src/components/oauth/OAuthButtons.tsx - VERSION SIMPLIFIÉE
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useOAuth } from '@/context/oauthContext';
+import { useState } from 'react';
 
 interface OAuthButtonsProps {
   action: 'login' | 'register';
@@ -11,63 +10,46 @@ interface OAuthButtonsProps {
 }
 
 export default function OAuthButtons({ action, className = '', disabled = false }: OAuthButtonsProps) {
-  const { state, initiateOAuth, getAvailableProviders } = useOAuth();
-  const [availableProviders, setAvailableProviders] = useState<any[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadProviders = async () => {
-      try {
-        setLoadingProviders(true);
-        console.log('🔄 [OAUTH-BUTTONS] Loading providers...');
-        
-        // Simuler les providers GitHub et Google en attendant l'API
-        const mockProviders = [
-          {
-            name: 'github',
-            displayName: 'GitHub',
-            enabled: true,
-            configured: true,
-            iconUrl: null,
-            description: 'Connexion avec GitHub'
-          },
-          {
-            name: 'google',
-            displayName: 'Google',
-            enabled: true,
-            configured: true,
-            iconUrl: null,
-            description: 'Connexion avec Google'
-          }
-        ];
-
-        setAvailableProviders(mockProviders);
-        console.log('✅ [OAUTH-BUTTONS] Providers loaded:', mockProviders.length);
-        
-      } catch (error) {
-        console.error('❌ [OAUTH-BUTTONS] Failed to load OAuth providers:', error);
-        // En cas d'erreur, utiliser les providers par défaut
-        setAvailableProviders([
-          { name: 'github', displayName: 'GitHub', enabled: true, configured: true },
-          { name: 'google', displayName: 'Google', enabled: true, configured: true }
-        ]);
-      } finally {
-        setLoadingProviders(false);
-      }
-    };
-
-    loadProviders();
-  }, [getAvailableProviders]);
-
+  // ✅ SOLUTION SIMPLIFIÉE : Redirection directe vers le backend
   const handleOAuthClick = async (provider: 'github' | 'google') => {
-    if (disabled || state.isLoading || state.isRedirecting) return;
+    if (disabled || isLoading) return;
     
     console.log(`🔐 [OAUTH-BUTTONS] Initiating ${provider} OAuth for ${action}`);
     
     try {
-      await initiateOAuth(provider, action);
-    } catch (error) {
+      setIsLoading(true);
+      setError(null);
+      
+      // Générer un state sécurisé pour CSRF protection
+      const state = crypto.randomUUID();
+      
+      // Stocker l'action pour le callback
+      sessionStorage.setItem('oauth_action', action);
+      sessionStorage.setItem('oauth_provider', provider);
+      sessionStorage.setItem('oauth_state', state);
+      
+      // URL du backend pour initier OAuth
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const authUrl = new URL(`${backendUrl}/auth/oauth/initiate/${provider}`);
+      
+      // Paramètres pour le backend
+      authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('action', action);
+      authUrl.searchParams.set('redirect_success', `${window.location.origin}/auth/success`);
+      authUrl.searchParams.set('redirect_error', `${window.location.origin}/auth/error`);
+      
+      console.log(`🚀 [OAUTH-BUTTONS] Redirecting to: ${authUrl.toString()}`);
+      
+      // Redirection directe vers le backend
+      window.location.href = authUrl.toString();
+      
+    } catch (error: any) {
       console.error(`❌ [OAUTH-BUTTONS] OAuth ${provider} error:`, error);
+      setError(`Erreur lors de l'initiation OAuth ${provider}: ${error.message}`);
+      setIsLoading(false);
     }
   };
 
@@ -89,11 +71,7 @@ export default function OAuthButtons({ action, className = '', disabled = false 
           </svg>
         );
       default:
-        return (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        );
+        return null;
     }
   };
 
@@ -101,28 +79,11 @@ export default function OAuthButtons({ action, className = '', disabled = false 
     return action === 'login' ? 'Se connecter avec' : 'S\'inscrire avec';
   };
 
-  // Si on charge les providers
-  if (loadingProviders) {
-    return (
-      <div className={`space-y-3 ${className}`}>
-        <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
-          <p className="text-sm text-gray-500">Chargement des options OAuth...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Si aucun provider disponible
-  if (availableProviders.length === 0) {
-    return (
-      <div className={`space-y-3 ${className}`}>
-        <div className="text-center py-4">
-          <p className="text-sm text-gray-500">Aucun provider OAuth disponible</p>
-        </div>
-      </div>
-    );
-  }
+  // Providers disponibles (simplifié)
+  const availableProviders = [
+    { name: 'github', displayName: 'GitHub', enabled: true },
+    { name: 'google', displayName: 'Google', enabled: true }
+  ];
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -145,20 +106,19 @@ export default function OAuthButtons({ action, className = '', disabled = false 
           <button
             key={provider.name}
             type="button"
-            onClick={() => handleOAuthClick(provider.name)}
-            disabled={disabled || state.isLoading || state.isRedirecting}
+            onClick={() => handleOAuthClick(provider.name as 'github' | 'google')}
+            disabled={disabled || isLoading}
             className={`
               w-full inline-flex justify-center items-center px-6 py-3 border-2 border-gray-300 rounded-lg shadow-sm
               text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400
               focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500
               disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-gray-300
               transition-all duration-200 ease-in-out
-              ${state.isRedirecting ? 'opacity-50 cursor-not-allowed' : ''}
               ${provider.name === 'github' ? 'hover:text-gray-900' : ''}
               ${provider.name === 'google' ? 'hover:text-gray-900' : ''}
             `}
           >
-            {state.isLoading || state.isRedirecting ? (
+            {isLoading ? (
               <>
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -179,13 +139,13 @@ export default function OAuthButtons({ action, className = '', disabled = false 
       </div>
 
       {/* Message d'erreur */}
-      {state.error && (
+      {error && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center">
             <svg className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
-            <p className="text-red-700 text-sm">{state.error}</p>
+            <p className="text-red-700 text-sm">{error}</p>
           </div>
         </div>
       )}
