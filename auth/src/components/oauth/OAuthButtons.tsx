@@ -13,7 +13,7 @@ export default function OAuthButtons({ action, className = '', disabled = false 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ SOLUTION SIMPLIFIÉE : Redirection directe vers le backend
+  // ✅ SOLUTION GRAPHQL : Utilisation de votre mutation generateOAuthUrl
   const handleOAuthClick = async (provider: 'github' | 'google') => {
     if (disabled || isLoading) return;
     
@@ -23,32 +23,73 @@ export default function OAuthButtons({ action, className = '', disabled = false 
       setIsLoading(true);
       setError(null);
       
-      // Générer un state sécurisé pour CSRF protection
-      const state = crypto.randomUUID();
-      
       // Stocker l'action pour le callback
       sessionStorage.setItem('oauth_action', action);
       sessionStorage.setItem('oauth_provider', provider);
-      sessionStorage.setItem('oauth_state', state);
       
-      // URL du backend pour initier OAuth
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const authUrl = new URL(`${backendUrl}/auth/oauth/initiate/${provider}`);
+      // Appel GraphQL vers votre mutation generateOAuthUrl
+      const graphqlUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql';
       
-      // Paramètres pour le backend
-      authUrl.searchParams.set('state', state);
-      authUrl.searchParams.set('action', action);
-      authUrl.searchParams.set('redirect_success', `${window.location.origin}/auth/success`);
-      authUrl.searchParams.set('redirect_error', `${window.location.origin}/auth/error`);
+      const response = await fetch(graphqlUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-App-ID': process.env.NEXT_PUBLIC_AUTH_APP_ID || '',
+          'X-App-Secret': process.env.NEXT_PUBLIC_AUTH_APP_SECRET || '',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          query: `
+            mutation GenerateOAuthUrl($input: OAuthAuthorizationInput!) {
+              generateOAuthUrl(input: $input) {
+                success
+                authUrl
+                state
+                provider
+                expiresAt
+                message
+              }
+            }
+          `,
+          variables: {
+            input: {
+              provider: provider,
+              redirectUri: `${window.location.origin}/oauth/callback`,
+              scopes: provider === 'github' 
+                ? ['user:email', 'read:user'] 
+                : ['openid', 'email', 'profile']
+            }
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
       
-      console.log(`🚀 [OAUTH-BUTTONS] Redirecting to: ${authUrl.toString()}`);
+      if (result.errors) {
+        throw new Error(result.errors[0].message);
+      }
+
+      const oauthData = result.data?.generateOAuthUrl;
       
-      // Redirection directe vers le backend
-      window.location.href = authUrl.toString();
+      if (oauthData?.success && oauthData.authUrl) {
+        console.log(`🚀 [OAUTH-BUTTONS] Redirecting to ${provider} OAuth: ${oauthData.authUrl}`);
+        
+        // Stocker le state retourné par le backend
+        sessionStorage.setItem('oauth_state', oauthData.state);
+        
+        // Redirection vers l'URL générée par votre backend
+        window.location.href = oauthData.authUrl;
+      } else {
+        throw new Error(oauthData?.message || 'Failed to generate OAuth URL');
+      }
       
     } catch (error: any) {
       console.error(`❌ [OAUTH-BUTTONS] OAuth ${provider} error:`, error);
-      setError(`Erreur lors de l'initiation OAuth ${provider}: ${error.message}`);
+      setError(`Erreur OAuth ${provider}: ${error.message}`);
       setIsLoading(false);
     }
   };
