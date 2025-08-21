@@ -7,6 +7,9 @@
 
 @import "tailwindcss/utilities";
 
+/* 🔧 SUPPRESSION de l'import Inter RSS qui cause des problèmes */
+/* @import url('https://rsms.me/inter/inter.css'); */
+
 /* Désactivation des flèches natives des select */
 [data-slot="control"] select {
   -webkit-appearance: none !important;
@@ -117,7 +120,7 @@
   }
 
   body {
-    font-family: "Chillax", sans-serif;
+    font-family: "Inter", "Chillax", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 }
 
@@ -198,6 +201,3 @@ nav[data-sidebar] [data-slot="icon"] {
     @apply font-chillax;
   }
 }
-
-
-

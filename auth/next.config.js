@@ -2,6 +2,7 @@
 const nextConfig = {
   transpilePackages: ['@mdxeditor/editor'],
   reactStrictMode: true,
+  
   webpack: (config, { isServer }) => {
     config.experiments = { ...config.experiments, topLevelAwait: true };
     
@@ -15,10 +16,12 @@ const nextConfig = {
         },
       };
     }
+    
     config.module.rules.push({
       test: /\.md$/,
       use: 'raw-loader'
     });
+    
     return config;
   },
 };

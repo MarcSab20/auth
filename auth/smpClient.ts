@@ -8,9 +8,9 @@ validateAuthConfig();
 const storage = new Persistence('localStorage');
 
 const confOpts = {
-  appId: AUTH_CONFIG.APP_ID,
-  appSecret: AUTH_CONFIG.APP_SECRET,
-  apiUrl: AUTH_CONFIG.API_URL,
+  appId: AUTH_CONFIG.AUTH_APP.APP_ID,           
+  appSecret: AUTH_CONFIG.AUTH_APP.APP_SECRET,   
+  apiUrl: AUTH_CONFIG.GATEWAY_URL, 
   graphqlUrl: AUTH_CONFIG.GRAPHQL_URL,
   defaultLanguage: defaultLanguage,
   appAccessDuration: AUTH_CONFIG.APP_ACCESS_DURATION,
@@ -28,8 +28,8 @@ export const initializeSMPClient = async () => {
   console.log("🔧 [SMP] Configuration:", {
     apiUrl: AUTH_CONFIG.API_URL,
     graphqlUrl: AUTH_CONFIG.GRAPHQL_URL,
-    appId: AUTH_CONFIG.APP_ID ? 'SET' : 'MISSING',
-    appSecret: AUTH_CONFIG.APP_SECRET ? 'SET' : 'MISSING'
+    appId: AUTH_CONFIG.AUTH_APP.APP_ID? 'SET' : 'MISSING',
+    appSecret: AUTH_CONFIG.AUTH_APP.APP_SECRET ? 'SET' : 'MISSING'
   });
 
   try {

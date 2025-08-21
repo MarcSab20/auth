@@ -1,4 +1,4 @@
-import { API_CONFIG, MAGIC_LINK_ERRORS } from '@/src/config/api.config';
+import { API_CONFIG } from '@/src/config/api.config';
 
 /**
  * Valide le format d'un token Magic Link

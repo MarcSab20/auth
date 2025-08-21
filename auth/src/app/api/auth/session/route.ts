@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_CONFIG } from "@/src/config/auth.config";
 
+// 🔧 AJOUT : Forcer le mode dynamique pour éviter les erreurs de build statique
+export const dynamic = 'force-dynamic';
+
 interface SessionData {
   isAuthenticated: boolean;
   user?: any;

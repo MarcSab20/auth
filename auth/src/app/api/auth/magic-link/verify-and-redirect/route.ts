@@ -1,5 +1,8 @@
-// auth/src/app/api/auth/magic-link/verify-and-redirect/route.ts - CORRECTION COMPLÈTE
+// auth/src/app/api/auth/magic-link/verify-and-redirect/route.ts - AVEC DYNAMIC
 import { NextRequest, NextResponse } from "next/server";
+
+// 🔧 AJOUT : Forcer le mode dynamique pour éviter les erreurs de build statique
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
@@ -75,10 +78,9 @@ export async function GET(req: NextRequest) {
 
     console.log('✅ [API] Magic Link verified successfully');
 
-    // ✅ CORRECTION PRINCIPALE: Construction URL Dashboard propre
+    // ✅ Construction URL Dashboard propre
     const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002';
     
-    // Construire l'URL finale sans double encoding
     let cleanRedirect = redirect;
     if (!cleanRedirect.startsWith('/')) {
       cleanRedirect = '/' + cleanRedirect;
@@ -90,37 +92,34 @@ export async function GET(req: NextRequest) {
     
     const redirectResponse = NextResponse.redirect(finalRedirectUrl);
 
-    // ✅ CORRECTION COOKIES: Configuration cross-domain optimisée pour localhost
+    // ✅ Configuration cookies cross-domain optimisée
     if (result.accessToken) {
       const isProduction = process.env.NODE_ENV === 'production';
-      const domain = isProduction ? '.services.com' : undefined; // ⚠️ IMPORTANT: undefined pour localhost
+      const domain = isProduction ? '.services.com' : undefined;
       
       const cookieOptions = {
         httpOnly: true,
         secure: isProduction,
         sameSite: 'lax' as const,
         path: '/',
-        domain: domain // Pas de domaine en localhost pour permettre le partage
+        domain: domain
       };
 
-      // ✅ Token d'accès (sécurisé)
       redirectResponse.cookies.set('smp_user_token', result.accessToken, {
         ...cookieOptions,
         maxAge: result.expiresIn || 3600
       });
 
-      // ✅ Refresh token (sécurisé)
       if (result.refreshToken) {
         redirectResponse.cookies.set('smp_user_refresh', result.refreshToken, {
           ...cookieOptions,
-          maxAge: 7 * 24 * 60 * 60 // 7 jours
+          maxAge: 7 * 24 * 60 * 60
         });
       }
 
-      // ✅ Session ID
       const sessionId = `magiclink_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       redirectResponse.cookies.set('smp_session_id', sessionId, {
-        httpOnly: false, // Accessible côté client
+        httpOnly: false,
         secure: isProduction,
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60,
@@ -128,9 +127,7 @@ export async function GET(req: NextRequest) {
         domain: domain
       });
 
-      // ✅ CORRECTION CRITIQUE: Cookie utilisateur optimisé
       if (result.userInfo) {
-        // Créer un objet utilisateur minimal mais complet
         const userCookie = {
           userID: result.userInfo.sub,
           username: result.userInfo.preferred_username || result.userInfo.email,
@@ -143,8 +140,7 @@ export async function GET(req: NextRequest) {
           sessionId: sessionId,
           source: 'magic_link',
           authenticatedAt: new Date().toISOString(),
-          timestamp: new Date().toISOString(), // ⚡ AJOUT pour validation
-          // Données supplémentaires si nécessaires
+          timestamp: new Date().toISOString(),
           given_name: result.userInfo.given_name,
           family_name: result.userInfo.family_name,
           state: result.userInfo.state,
@@ -152,10 +148,8 @@ export async function GET(req: NextRequest) {
           attributes: result.userInfo.attributes
         };
 
-        // ⚡ CRITIQUE: Sérialiser sans encoding supplémentaire
         const userCookieValue = JSON.stringify(userCookie);
         
-        // Vérifier la taille du cookie (limite 4KB)
         if (userCookieValue.length > 4000) {
           console.warn('⚠️ [API] Cookie trop volumineux, compression...');
           const compressedUserCookie = {
@@ -169,7 +163,7 @@ export async function GET(req: NextRequest) {
             timestamp: new Date().toISOString()
           };
           redirectResponse.cookies.set('smp_user_0', JSON.stringify(compressedUserCookie), {
-            httpOnly: false, // Accessible côté client
+            httpOnly: false,
             secure: isProduction,
             sameSite: 'lax',
             maxAge: 7 * 24 * 60 * 60,
@@ -178,7 +172,7 @@ export async function GET(req: NextRequest) {
           });
         } else {
           redirectResponse.cookies.set('smp_user_0', userCookieValue, {
-            httpOnly: false, // Accessible côté client
+            httpOnly: false,
             secure: isProduction,
             sameSite: 'lax',
             maxAge: 7 * 24 * 60 * 60,
@@ -188,14 +182,6 @@ export async function GET(req: NextRequest) {
         }
 
         console.log('✅ [API] Cookies set for user:', result.userInfo.email);
-        console.log('🍪 [API] Cookie details:', {
-          hasToken: true,
-          hasRefresh: !!result.refreshToken,
-          hasSession: true,
-          hasUser: true,
-          userCookieSize: userCookieValue.length,
-          domain: domain || 'localhost'
-        });
       }
     }
 
@@ -205,7 +191,6 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error('❌ [API] Magic Link verification failed:', error);
     
-    // Redirection vers page d'erreur
     const errorUrl = new URL('/magic-link-error', req.url);
     errorUrl.searchParams.set('error', error.message || 'Magic Link verification failed');
     return NextResponse.redirect(errorUrl);

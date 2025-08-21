@@ -63,7 +63,7 @@ export function useValidation(
             isValid: result.valid && result.available,
             isValidating: false,
             errors: result.errors,
-            suggestions: result.suggestions,
+            suggestions: result.suggestions|| [] ,
             lastValidated: new Date().toISOString(),
           });
           break;
@@ -85,7 +85,7 @@ export function useValidation(
             isValid: result.valid,
             isValidating: false,
             errors: result.errors,
-            suggestions: result.suggestions,
+            suggestions: result.suggestions || [],
             score: result.score,
             lastValidated: new Date().toISOString(),
           });

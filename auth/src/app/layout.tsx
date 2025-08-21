@@ -1,7 +1,6 @@
-// auth/src/app/layout.tsx - AVEC OUTILS DE DEBUG
+// auth/src/app/layout.tsx - VERSION FINALE SIMPLE SANS POLICES PROBLÉMATIQUES
 
 import './css/style.css'
-import { Inter } from "next/font/google";
 import { AuthProvider } from "@/context/authenticationContext";
 import { SignupProvider } from "@/context/signupContext";
 import { MagicLinkProvider } from "@/context/magicLinkContext";
@@ -9,11 +8,6 @@ import { WaitingListSignupProvider } from "@/context/waitingListSignupContext";
 import { SignupInvitationProvider } from "@/context/signupInvitationContext";
 import type { Metadata } from 'next'
 import type React from 'react'
-
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Services - Authentication SDK",
@@ -26,13 +20,23 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.className} antialiased`}
-    >
+    <html lang="en" className="antialiased">
       <head>
-        <link rel="preconnect" href="https://rsms.me/" />
-        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+        {/* 🔧 SOLUTION SIMPLE : Chargement via CDN sans Next.js font optimization */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link 
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" 
+          rel="stylesheet"
+          media="print"
+        />
+        <noscript>
+          <link 
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" 
+            rel="stylesheet"
+          />
+        </noscript>
+        
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -49,18 +53,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           }}
         />
       </head>
-      <body className="bg-white font-chillax text-zinc-950 antialiased lg:bg-white dark:bg-zinc-900 dark:text-white">
-        {/* Provider unifié avec SDK */}
+      <body className="bg-white font-inter text-zinc-950 antialiased lg:bg-white dark:bg-zinc-900 dark:text-white">
         <AuthProvider>
           <MagicLinkProvider>
             <SignupProvider>
-              {/* Providers de compatibilité pour des cas spéciaux */}
               <SignupInvitationProvider>
                 <WaitingListSignupProvider>
                   <div className="flex min-h-screen flex-col overflow-hidden supports-[overflow:clip]:overflow-clip">
                     {children}
                   </div>
-                  
                 </WaitingListSignupProvider>
               </SignupInvitationProvider>
             </SignupProvider>
