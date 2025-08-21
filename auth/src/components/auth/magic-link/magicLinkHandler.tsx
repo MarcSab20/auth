@@ -1,8 +1,10 @@
+// auth/src/components/auth/magic-link/magicLinkHandler.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEnhancedAuth } from "@/context/authenticationContext";
+import { SharedSessionManager } from "@/src/lib/SharedSessionManager";
 import MagicLinkProcessing from "./magicLinkProcessing";
 import MagicLinkSuccess from "./magicLinkSuccess";
 import MagicLinkError from "./magicLinkError";
@@ -22,7 +24,7 @@ interface MagicLinkResult {
 export default function MagicLinkHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state } = useEnhancedAuth();
+  const { state, login } = useEnhancedAuth();
   
   const [status, setStatus] = useState<'processing' | 'success' | 'error' | 'redirect'>('processing');
   const [result, setResult] = useState<MagicLinkResult | null>(null);
@@ -52,12 +54,19 @@ export default function MagicLinkHandler() {
       
       console.log('🔗 Verification du Magic Link avec token:', token.substring(0, 8) + '...');
       
-      // Appel vers votre API GraphQL
-      const response = await fetch('http://localhost:3001/graphql', {
+      // ✅ CORRECTION: Utiliser la Gateway GraphQL
+      const graphqlUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql';
+      
+      const response = await fetch(graphqlUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // ✅ Ajouter les headers d'app auth si nécessaire
+          'X-App-ID': process.env.NEXT_PUBLIC_AUTH_APP_ID || '',
+          'X-App-Secret': process.env.NEXT_PUBLIC_AUTH_APP_SECRET || '',
+          'X-Client-Name': 'auth-frontend',
         },
+        credentials: 'include', // ✅ Important pour les cookies
         body: JSON.stringify({
           query: `
             mutation VerifyMagicLink($token: String!) {
@@ -97,8 +106,42 @@ export default function MagicLinkHandler() {
       setResult(magicLinkResult);
 
       if (magicLinkResult.success) {
-        // Stocker les tokens si fournis
-        if (magicLinkResult.accessToken) {
+        console.log('✅ Magic Link vérifié avec succès');
+
+        // ✅ CORRECTION: Créer la session complète avec SharedSessionManager
+        if (magicLinkResult.accessToken && magicLinkResult.userInfo) {
+          const sessionData = {
+            user: {
+              userID: magicLinkResult.userInfo.sub,
+              username: magicLinkResult.userInfo.preferred_username || magicLinkResult.userInfo.email,
+              email: magicLinkResult.userInfo.email,
+              profileID: magicLinkResult.userInfo.sub,
+              accessibleOrganizations: magicLinkResult.userInfo.organization_ids || [],
+              organizations: magicLinkResult.userInfo.organization_ids || [],
+              sub: magicLinkResult.userInfo.sub,
+              roles: magicLinkResult.userInfo.roles || [],
+              given_name: magicLinkResult.userInfo.given_name,
+              family_name: magicLinkResult.userInfo.family_name,
+              state: magicLinkResult.userInfo.state,
+              email_verified: magicLinkResult.userInfo.email_verified,
+              attributes: magicLinkResult.userInfo.attributes
+            },
+            tokens: {
+              accessToken: magicLinkResult.accessToken,
+              refreshToken: magicLinkResult.refreshToken,
+            },
+            sessionId: `magiclink_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            expiresAt: new Date(Date.now() + (magicLinkResult.expiresIn || 3600) * 1000).toISOString(),
+            lastActivity: new Date().toISOString(),
+            source: 'auth' as const
+          };
+
+          // ✅ Stocker la session avec SharedSessionManager
+          SharedSessionManager.storeSession(sessionData);
+
+          console.log('✅ Session cross-app créée via Magic Link');
+
+          // ✅ Stocker aussi dans localStorage pour compatibilité
           localStorage.setItem('access_token', magicLinkResult.accessToken);
           
           if (magicLinkResult.refreshToken) {
@@ -116,10 +159,16 @@ export default function MagicLinkHandler() {
 
         setStatus('success');
         
-        // Redirection automatique après un délai
+        // ✅ CORRECTION: Redirection vers le dashboard externe
         setTimeout(() => {
           setStatus('redirect');
-          router.push(redirectUrl);
+          const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002';
+          const finalRedirectUrl = redirectUrl === '/account' ? '/account' : redirectUrl;
+          
+          console.log('🚀 Redirection vers Dashboard:', `${dashboardUrl}${finalRedirectUrl}`);
+          
+          // ✅ Redirection vers l'application externe
+          window.location.href = `${dashboardUrl}${finalRedirectUrl}`;
         }, 2000);
         
       } else {
@@ -145,6 +194,12 @@ export default function MagicLinkHandler() {
     router.push('/signin');
   };
 
+  const handleManualRedirect = () => {
+    const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002';
+    const finalRedirectUrl = redirectUrl === '/account' ? '/account' : redirectUrl;
+    window.location.href = `${dashboardUrl}${finalRedirectUrl}`;
+  };
+
   if (status === 'processing') {
     return <MagicLinkProcessing />;
   }
@@ -155,6 +210,7 @@ export default function MagicLinkHandler() {
         result={result}
         redirectUrl={redirectUrl}
         isRedirecting={status === 'redirect'}
+
       />
     );
   }

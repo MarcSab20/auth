@@ -1,3 +1,4 @@
+// auth/src/components/auth/magic-link/magicLinkSuccess.tsx
 import { useEffect, useState } from "react";
 
 interface MagicLinkSuccessProps {
@@ -21,6 +22,13 @@ export default function MagicLinkSuccess({
       return () => clearTimeout(timer);
     }
   }, [countdown, isRedirecting]);
+
+  const handleManualRedirect = () => {
+    const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002';
+    const finalRedirectUrl = redirectUrl === '/account' ? '/account' : redirectUrl;
+    console.log('🚀 Redirection manuelle vers:', `${dashboardUrl}${finalRedirectUrl}`);
+    window.location.href = `${dashboardUrl}${finalRedirectUrl}`;
+  };
 
   return (
     <div className="max-w-md mx-auto">
@@ -76,6 +84,14 @@ export default function MagicLinkSuccess({
               <span>Session sécurisée établie</span>
             </div>
           )}
+
+          {/* Statut de redirection vers dashboard */}
+          <div className="flex items-center justify-center space-x-2 text-sm text-blue-600">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>Préparation de la redirection vers le Dashboard</span>
+          </div>
         </div>
 
         {/* MFA requis */}
@@ -103,23 +119,26 @@ export default function MagicLinkSuccess({
             <div className="flex items-center justify-center space-x-2 text-blue-600 mb-3">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
               <span className="text-sm font-medium">
-                Redirection en cours...
+                Redirection vers le Dashboard...
               </span>
             </div>
             <p className="text-sm text-gray-500">
               Redirection dans {countdown} seconde{countdown !== 1 ? 's' : ''}
             </p>
+            <p className="text-xs text-gray-400 mt-2">
+              Destination: {process.env.NEXT_PUBLIC_DASHBOARD_URL}{redirectUrl}
+            </p>
           </div>
         ) : (
           <div className="mb-6">
             <button
-              onClick={() => window.location.href = redirectUrl}
+              onClick={handleManualRedirect}
               className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
             >
-              Accéder au tableau de bord
-              <svg className="ml-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
+              Accéder au Dashboard
             </button>
           </div>
         )}
@@ -131,19 +150,40 @@ export default function MagicLinkSuccess({
               <svg className="h-4 w-4 mr-2 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Sécurité vérifiée
+              Session cross-applications créée
             </h3>
             <ul className="text-xs text-gray-600 space-y-1">
               <li>• Magic Link à usage unique utilisé</li>
-              <li>• Session chiffrée établie</li>
-              <li>• Authentification vérifiée</li>
-              <li>• Accès sécurisé accordé</li>
+              <li>• Session chiffrée établie avec cookies sécurisés</li>
+              <li>• Authentification vérifiée et propagée</li>
+              <li>• Accès autorisé au Dashboard Services</li>
+              <li>• Redirection automatique configurée</li>
             </ul>
           </div>
         </div>
 
+        {/* Debug info (development only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-6 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="text-left">
+              <h4 className="text-xs font-medium text-yellow-900 mb-2">
+                🔧 Debug Info (Development)
+              </h4>
+              <div className="text-xs text-yellow-700 space-y-1">
+                <p><strong>Auth App:</strong> {process.env.NEXT_PUBLIC_AUTH_URL}</p>
+                <p><strong>Dashboard App:</strong> {process.env.NEXT_PUBLIC_DASHBOARD_URL}</p>
+                <p><strong>Gateway:</strong> {process.env.NEXT_PUBLIC_GRAPHQL_URL}</p>
+                <p><strong>Redirect URL:</strong> {redirectUrl}</p>
+                <p><strong>Has Token:</strong> {result?.accessToken ? 'Yes' : 'No'}</p>
+                <p><strong>User ID:</strong> {result?.userInfo?.sub || 'N/A'}</p>
+                <p><strong>Session Created:</strong> ✅</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 text-xs text-gray-400">
-          Vous pouvez fermer cet onglet en toute sécurité
+          Session active • Cookies sécurisés créés • Prêt pour Dashboard
         </div>
       </div>
     </div>

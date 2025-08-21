@@ -14,7 +14,9 @@ export async function middleware(req: NextRequest) {
     "/forgot-password",
     "/reset-password",
     "/magic-link",
+    "/magic-link-error",
     "/magic-link-request",
+    "/api/auth/magic-link",
     "/oauth",           // AJOUT: Routes OAuth
     "/transition",
     "/api",
@@ -40,6 +42,27 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (pathname === '/magic-link') {
+    const token = req.nextUrl.searchParams.get('token');
+    
+    if (token) {
+      console.log(`🔗 [MIDDLEWARE] Magic Link détecté avec token: ${token.substring(0, 8)}...`);
+      
+      // Rediriger vers la route API qui gère les cookies et la redirection
+      const apiUrl = req.nextUrl.clone();
+      apiUrl.pathname = '/api/auth/magic-link/verify-and-redirect';
+      
+      console.log(`🔄 [MIDDLEWARE] Redirection vers API Magic Link: ${apiUrl.toString()}`);
+      return NextResponse.redirect(apiUrl);
+    } else {
+      console.log(`❌ [MIDDLEWARE] Magic Link sans token, redirection vers erreur`);
+      const errorUrl = req.nextUrl.clone();
+      errorUrl.pathname = '/magic-link-error';
+      errorUrl.searchParams.set('error', 'Token manquant');
+      return NextResponse.redirect(errorUrl);
+    }
+  }
+  
   // Route racine "/" - redirection conditionnelle SANS BOUCLE
   if (pathname === "/") {
     if (userCookie?.value) {
