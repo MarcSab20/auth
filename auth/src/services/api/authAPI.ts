@@ -56,7 +56,8 @@ class AuthAPI {
           'X-App-ID': AUTH_CONFIG.AUTH_APP.APP_ID,
           'X-App-Secret': AUTH_CONFIG.AUTH_APP.APP_SECRET,
           'X-Request-ID': this.generateRequestId(),
-          'Origin': window.location.origin, // AJOUT: Origin explicite
+          'Origin': window.location.origin,
+          'X-Client-Name': 'dashboard-app',
         },
         credentials: 'include', // AJOUT: Pour les cookies
         body: JSON.stringify({ query, variables }),
@@ -132,6 +133,7 @@ class AuthAPI {
         'X-App-Secret': AUTH_CONFIG.AUTH_APP.APP_SECRET,
         'X-Request-ID': this.generateRequestId(),
         'Origin': window.location.origin, // AJOUT: Origin explicite
+        'X-Client-Name': 'dashboard-app',
       };
 
       // CORRECTION: Ajouter le token app si disponible

@@ -390,50 +390,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   dispatch({ type: 'SET_ERROR', payload: null });
 
   try {
+    console.log('🔗 [AUTH] Début vérification Magic Link via SDK...');
+    
+    // Test de l'authentification app d'abord
+    const appAuthResult = await testAppAuth();
+    if (!appAuthResult.success) {
+      throw new Error(`ÉCHEC_AUTH_APP: ${appAuthResult.error}`);
+    }
+
+    // Utiliser le SDK smp-client pour vérifier le Magic Link
     const result = await smpClient.magicLink.verify({ token });
     
     if (result.success && result.accessToken && result.user) {
-      // CORRECTION : Validation du token pour récupérer les données complètes
-      const validation = await authAPI.validateUserToken(result.accessToken);
+      console.log('✅ [AUTH] Magic Link vérifié avec succès via SDK');
       
-      let user: User;
-      if (validation.valid && validation.user) {
-        user = {
-          userID: validation.user.userID,
-          username: validation.user.username,
-          email: validation.user.email,
-          profileID: validation.user.profileID,
-          accessibleOrganizations: validation.user.accessibleOrganizations || [],
-          organizations: validation.user.organizations || [],
-          sub: validation.user.sub,
-          roles: validation.user.roles || [],
-          given_name: validation.user.given_name,
-          family_name: validation.user.family_name,
-          state: validation.user.state,
-          email_verified: validation.user.email_verified,
-          attributes: validation.user.attributes
-        };
-      } else {
-        // Fallback avec les données du Magic Link
-        user = {
-          userID: result.user.sub || result.user.userID || 'temp-user-id',
-          username: result.user.preferred_username || result.user.username || result.user.email,
-          email: result.user.email,
-          profileID: result.user.profileID || result.user.sub || 'temp-profile-id',
-          accessibleOrganizations: result.user.organization_ids || [],
-          sub: result.user.sub || 'temp-sub',
-          roles: result.user.roles || [],
-          organizations: result.user.organization_ids || []
-        };
-      }
+      // Créer un objet User structuré pour la session
+      const user: User = {
+        userID: result.user.sub || result.user.userID || 'temp-user-id',
+        username: result.user.preferred_username || result.user.username || result.user.email,
+        email: result.user.email,
+        profileID: result.user.profileID || result.user.sub || 'temp-profile-id',
+        accessibleOrganizations: result.user.organization_ids || [],
+        organizations: result.user.organization_ids || [],
+        sub: result.user.sub,
+        roles: result.user.roles || [],
+        given_name: result.user.given_name,
+        family_name: result.user.family_name,
+        state: result.user.state,
+        email_verified: result.user.email_verified,
+        attributes: result.user.attributes
+      };
 
-      // Créer session partagée
+      // Créer la session partagée avec SharedSessionManager
       const sessionData = SharedSessionManager.createSessionFromAuth({
         user,
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
       }, 'auth');
 
+      // Mettre à jour le state local
       dispatch({
         type: 'SET_TOKENS',
         payload: {
@@ -445,21 +440,194 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_USER', payload: user });
       dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
       
+      console.log('✅ [AUTH] Session partagée créée pour Magic Link');
       return { success: true };
+      
     } else {
       const errorMessage = result.message || 'Échec de la connexion Magic Link';
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
       return { success: false, error: errorMessage };
     }
   } catch (error: any) {
-    const errorMessage = error.message || 'Erreur de connexion Magic Link';
-    dispatch({ type: 'SET_ERROR', payload: errorMessage });
-    return { success: false, error: errorMessage };
+    console.error('❌ [AUTH] Erreur Magic Link:', error);
+    dispatch({ type: 'SET_ERROR', payload: error.message });
+    return { success: false, error: error.message };
   } finally {
     dispatch({ type: 'SET_LOADING', payload: false });
   }
+}, [testAppAuth]);
+
+  // Fonction pour initialiser la session depuis SharedSessionManager
+const initializeSessionFromSharedManager = useCallback(async () => {
+  try {
+    console.log('🔍 [AUTH] Vérification session partagée...');
+    
+    const existingSession = SharedSessionManager.getSession();
+    
+    if (existingSession && SharedSessionManager.isSessionValid(existingSession)) {
+      console.log('✅ [AUTH] Session partagée valide trouvée');
+      
+      // Restaurer la session dans le state
+      dispatch({ 
+        type: 'SET_TOKENS', 
+        payload: { 
+          token: existingSession.tokens.accessToken, 
+          refreshToken: existingSession.tokens.refreshToken,
+          sessionId: existingSession.sessionId
+        } 
+      });
+      dispatch({ type: 'SET_USER', payload: existingSession.user });
+      dispatch({ type: 'UPDATE_LAST_ACTIVITY' });
+      
+      return true;
+    } else {
+      console.log('ℹ️ [AUTH] Aucune session partagée valide');
+      return false;
+    }
+  } catch (error: any) {
+    console.error('❌ [AUTH] Erreur récupération session:', error);
+    return false;
+  }
 }, []);
 
+// useEffect d'initialisation corrigé
+useEffect(() => {
+  const initializeAuth = async () => {
+    console.log('[DASHBOARD-AUTH] Initialisation authentification...');
+    dispatch({ type: 'SET_LOADING', payload: true });
+    
+    try {
+      console.log('📋 [DASHBOARD-AUTH] Phase 1: Vérification session existante');
+      
+      // Essayer d'utiliser la session existante
+      console.log('🔄 [DASHBOARD-AUTH] Tentative utilisation session existante...');
+      const hasExistingSession = await initializeSessionFromSharedManager();
+      
+      if (hasExistingSession) {
+        console.log('✅ [AUTH] Session existante récupérée avec succès');
+        return;
+      }
+
+      console.log('📋 [DASHBOARD-AUTH] Phase 2: Authentification application');
+      
+      // Test authentification application
+      console.log('🔧 [DASHBOARD-AUTH] Test authentification application Dashboard...');
+      validateAuthConfig();
+      console.log('✅ [CONFIG] Configuration Dashboard validée: ', {
+        AUTH_URL: AUTH_CONFIG.AUTH_URL,
+        DASHBOARD_URL: AUTH_CONFIG.DASHBOARD_URL,
+        GRAPHQL_URL: AUTH_CONFIG.GRAPHQL_URL,
+        COOKIE_DOMAIN: AUTH_CONFIG.COOKIE_DOMAIN
+      });
+      console.log('✅ [DASHBOARD-AUTH] Configuration validée');
+
+      const appAuthResult = await testAppAuth();
+      if (!appAuthResult.success) {
+        throw new Error(`App auth failed: ${appAuthResult.error}`);
+      }
+      console.log('✅ [DASHBOARD-AUTH] Authentification app Dashboard réussie');
+
+      console.log('📋 [DASHBOARD-AUTH] Phase 3: Récupération session après auth app');
+      // Vérifier encore une fois s'il y a une session après l'auth app
+      const hasSessionAfterAppAuth = await initializeSessionFromSharedManager();
+      if (!hasSessionAfterAppAuth) {
+        console.log('📋 [DASHBOARD-AUTH] Phase 4: Finalisation transition');
+        
+        // Vérifier s'il y a une transition en cours
+        const sessionFromTransition = SharedSessionManager.completeTransition();
+        if (sessionFromTransition) {
+          console.log('✅ [DASHBOARD-AUTH] Transition complétée');
+          dispatch({ 
+            type: 'SET_TOKENS', 
+            payload: { 
+              token: sessionFromTransition.tokens.accessToken, 
+              refreshToken: sessionFromTransition.tokens.refreshToken,
+              sessionId: sessionFromTransition.sessionId
+            } 
+          });
+          dispatch({ type: 'SET_USER', payload: sessionFromTransition.user });
+          return;
+        }
+        
+        console.log('ℹ️ [SESSION-MANAGER] Aucune transition en cours');
+        
+        // Dernière vérification
+        const finalSession = SharedSessionManager.getSession();
+        if (!finalSession) {
+          console.log('📋 [DASHBOARD-AUTH] Phase 5: Aucune session trouvée');
+          // Pas de session trouvée - c'est normal pour une nouvelle visite
+        }
+      }
+      
+    } catch (error: any) {
+      console.error('❌ [AUTH] Erreur initialisation:', error);
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+    } finally {
+      dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  initializeAuth();
+
+  // Écouter les changements de session cross-app
+  const unsubscribe = SharedSessionManager.onSessionChange((sessionData) => {
+    if (sessionData && SharedSessionManager.isSessionValid(sessionData)) {
+      console.log('🔄 [AUTH] Session mise à jour depuis autre app');
+      dispatch({ 
+        type: 'SET_TOKENS', 
+        payload: { 
+          token: sessionData.tokens.accessToken, 
+          refreshToken: sessionData.tokens.refreshToken,
+          sessionId: sessionData.sessionId
+        } 
+      });
+      dispatch({ type: 'SET_USER', payload: sessionData.user });
+    } else {
+      console.log('🚪 [AUTH] Déconnexion depuis autre app');
+      dispatch({ type: 'CLEAR_AUTH' });
+    }
+  });
+
+  window.addEventListener('auth:logout', handleAutoLogout);
+  
+  return () => {
+    unsubscribe();
+    window.removeEventListener('auth:logout', handleAutoLogout);
+  };
+}, [handleAutoLogout, testAppAuth, initializeSessionFromSharedManager]);
+
+// Fonction pour traiter les Magic Links depuis l'URL
+const processMagicLinkFromUrl = useCallback(async () => {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const magicLinkToken = urlParams.get('token');
+    
+    if (magicLinkToken) {
+      console.log('🔗 [AUTH] Magic Link détecté dans l\'URL');
+      
+      // Nettoyer l'URL
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('token');
+      window.history.replaceState({}, '', newUrl.toString());
+      
+      // Traiter le Magic Link
+      const result = await loginWithMagicLink(magicLinkToken);
+      
+      if (result.success) {
+        console.log('✅ [AUTH] Magic Link traité avec succès');
+        return true;
+      } else {
+        console.error('❌ [AUTH] Échec traitement Magic Link:', result.error);
+        return false;
+      }
+    }
+    
+    return false;
+  } catch (error: any) {
+    console.error('❌ [AUTH] Erreur traitement Magic Link URL:', error);
+    return false;
+  }
+}, [loginWithMagicLink]);
 
   // Rafraîchissement de token avec mise à jour session partagée
   const refreshToken = useCallback(async (): Promise<boolean> => {

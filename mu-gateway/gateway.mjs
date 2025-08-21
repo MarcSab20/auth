@@ -107,12 +107,14 @@ async function main() {
         'X-App-ID',
         'X-App-Secret', 
         'X-App-Token',
+        'X-App-Token',
         'X-Request-ID',
         'X-Trace-ID',
         'X-Client-Name',
         'X-Client-Version',
         'X-Services-App-Access',
         'X-Services-App-ID',      // 🔧 Added for debugging
+        'X-Services-App-Token',
         
         // Custom headers that might be needed
         'X-Apollo-Operation-Name',
