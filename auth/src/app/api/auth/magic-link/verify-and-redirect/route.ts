@@ -1,15 +1,14 @@
-// auth/src/app/api/auth/magic-link/verify-and-redirect/route.ts
+// auth/src/app/api/auth/magic-link/verify-and-redirect/route.ts - CORRECTION COMPLÈTE
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const token = searchParams.get('token');
-    // ✅ CORRECTION: Décoder correctement l'URL de redirection
     const redirect = decodeURIComponent(searchParams.get('redirect') || '/account');
     
-    console.log('🔗 [API] Raw redirect param:', searchParams.get('redirect'));
-    console.log('🔗 [API] Decoded redirect:', redirect);
+    console.log('🔗 [API] Magic Link verification - Token:', token?.substring(0, 8) + '...');
+    console.log('🔗 [API] Redirect destination:', redirect);
     
     if (!token) {
       return NextResponse.json(
@@ -17,8 +16,6 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
-
-    console.log('🔗 [API] Verifying magic link token:', token.substring(0, 8) + '...');
 
     // ✅ Appel GraphQL vers le backend
     const graphqlUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql';
@@ -70,52 +67,49 @@ export async function GET(req: NextRequest) {
     }
 
     if (!result.success) {
-      // ✅ Redirection vers page d'erreur avec message
+      console.log('❌ [API] Magic Link verification failed:', result.message);
       const errorUrl = new URL('/magic-link-error', req.url);
       errorUrl.searchParams.set('error', result.message || 'Magic Link verification failed');
       return NextResponse.redirect(errorUrl);
     }
 
-    // ✅ CORRECTION: Construction propre de l'URL de redirection
+    console.log('✅ [API] Magic Link verified successfully');
+
+    // ✅ CORRECTION PRINCIPALE: Construction URL Dashboard propre
     const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002';
     
-    // Nettoyer le path de redirection
+    // Construire l'URL finale sans double encoding
     let cleanRedirect = redirect;
     if (!cleanRedirect.startsWith('/')) {
       cleanRedirect = '/' + cleanRedirect;
     }
     
-    // Construire l'URL finale proprement
-    const finalRedirectUrl = new URL(cleanRedirect, dashboardUrl).toString();
+    const finalRedirectUrl = `${dashboardUrl}${cleanRedirect}`;
     
-    console.log('🚀 [API] Magic Link verified, redirecting to:', finalRedirectUrl);
-    console.log('🔧 [API] URL construction:', {
-      dashboardUrl,
-      originalRedirect: searchParams.get('redirect'),
-      decodedRedirect: redirect,
-      cleanRedirect,
-      finalUrl: finalRedirectUrl
-    });
+    console.log('🚀 [API] Preparing redirect to:', finalRedirectUrl);
     
     const redirectResponse = NextResponse.redirect(finalRedirectUrl);
 
-    // ✅ Stocker les tokens dans des cookies sécurisés cross-domain
+    // ✅ CORRECTION COOKIES: Configuration cross-domain optimisée pour localhost
     if (result.accessToken) {
+      const isProduction = process.env.NODE_ENV === 'production';
+      const domain = isProduction ? '.services.com' : undefined; // ⚠️ IMPORTANT: undefined pour localhost
+      
       const cookieOptions = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isProduction,
         sameSite: 'lax' as const,
         path: '/',
-        domain: process.env.NODE_ENV === 'production' ? '.services.com' : undefined // ✅ undefined pour localhost
+        domain: domain // Pas de domaine en localhost pour permettre le partage
       };
 
-      // Cookie pour le token d'accès (court terme)
+      // ✅ Token d'accès (sécurisé)
       redirectResponse.cookies.set('smp_user_token', result.accessToken, {
         ...cookieOptions,
         maxAge: result.expiresIn || 3600
       });
 
-      // Cookie pour le refresh token (long terme)
+      // ✅ Refresh token (sécurisé)
       if (result.refreshToken) {
         redirectResponse.cookies.set('smp_user_refresh', result.refreshToken, {
           ...cookieOptions,
@@ -123,45 +117,89 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      // Cookie de session
+      // ✅ Session ID
       const sessionId = `magiclink_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       redirectResponse.cookies.set('smp_session_id', sessionId, {
-        httpOnly: false, // Accessible côté client pour validation
-        secure: process.env.NODE_ENV === 'production',
+        httpOnly: false, // Accessible côté client
+        secure: isProduction,
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60,
         path: '/',
-        domain: process.env.NODE_ENV === 'production' ? '.services.com' : undefined
+        domain: domain
       });
 
-      // Cookie utilisateur (accessible côté client)
+      // ✅ CORRECTION CRITIQUE: Cookie utilisateur optimisé
       if (result.userInfo) {
+        // Créer un objet utilisateur minimal mais complet
         const userCookie = {
           userID: result.userInfo.sub,
           username: result.userInfo.preferred_username || result.userInfo.email,
           email: result.userInfo.email,
           profileID: result.userInfo.sub,
+          sub: result.userInfo.sub,
           accessibleOrganizations: result.userInfo.organization_ids || [],
           organizations: result.userInfo.organization_ids || [],
           roles: result.userInfo.roles || [],
           sessionId: sessionId,
           source: 'magic_link',
-          authenticatedAt: new Date().toISOString()
+          authenticatedAt: new Date().toISOString(),
+          timestamp: new Date().toISOString(), // ⚡ AJOUT pour validation
+          // Données supplémentaires si nécessaires
+          given_name: result.userInfo.given_name,
+          family_name: result.userInfo.family_name,
+          state: result.userInfo.state,
+          email_verified: result.userInfo.email_verified,
+          attributes: result.userInfo.attributes
         };
 
-        redirectResponse.cookies.set('smp_user_0', JSON.stringify(userCookie), {
-          httpOnly: false, // Accessible côté client
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: 7 * 24 * 60 * 60,
-          path: '/',
-          domain: process.env.NODE_ENV === 'production' ? '.services.com' : undefined
-        });
+        // ⚡ CRITIQUE: Sérialiser sans encoding supplémentaire
+        const userCookieValue = JSON.stringify(userCookie);
+        
+        // Vérifier la taille du cookie (limite 4KB)
+        if (userCookieValue.length > 4000) {
+          console.warn('⚠️ [API] Cookie trop volumineux, compression...');
+          const compressedUserCookie = {
+            userID: result.userInfo.sub,
+            username: result.userInfo.preferred_username || result.userInfo.email,
+            email: result.userInfo.email,
+            profileID: result.userInfo.sub,
+            sub: result.userInfo.sub,
+            sessionId: sessionId,
+            source: 'magic_link',
+            timestamp: new Date().toISOString()
+          };
+          redirectResponse.cookies.set('smp_user_0', JSON.stringify(compressedUserCookie), {
+            httpOnly: false, // Accessible côté client
+            secure: isProduction,
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60,
+            path: '/',
+            domain: domain
+          });
+        } else {
+          redirectResponse.cookies.set('smp_user_0', userCookieValue, {
+            httpOnly: false, // Accessible côté client
+            secure: isProduction,
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60,
+            path: '/',
+            domain: domain
+          });
+        }
 
         console.log('✅ [API] Cookies set for user:', result.userInfo.email);
+        console.log('🍪 [API] Cookie details:', {
+          hasToken: true,
+          hasRefresh: !!result.refreshToken,
+          hasSession: true,
+          hasUser: true,
+          userCookieSize: userCookieValue.length,
+          domain: domain || 'localhost'
+        });
       }
     }
 
+    console.log('🚀 [API] Redirection complete to:', finalRedirectUrl);
     return redirectResponse;
 
   } catch (error: any) {
