@@ -1,4 +1,4 @@
-// auth/src/components/oauth/OAuthButtons.tsx - VERSION SIMPLIFIÉE
+// auth/src/components/oauth/OAuthButtons.tsx - VERSION CORRIGÉE
 'use client';
 
 import { useState } from 'react';
@@ -12,8 +12,17 @@ interface OAuthButtonsProps {
 export default function OAuthButtons({ action, className = '', disabled = false }: OAuthButtonsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
 
-  // ✅ SOLUTION GRAPHQL : Utilisation de votre mutation generateOAuthUrl
+  // ✅ CORRECTION 1: Configuration des URLs corrigées
+  const API_CONFIG = {
+    GRAPHQL_URL: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
+    AUTH_APP_ID: process.env.NEXT_PUBLIC_AUTH_APP_ID || 'f2655ffda8594852',
+    AUTH_APP_SECRET: process.env.NEXT_PUBLIC_AUTH_APP_SECRET || '',
+    FRONTEND_URL: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+  };
+
+  // ✅ CORRECTION 2: Gestion OAuth avec timeout et retry
   const handleOAuthClick = async (provider: 'github' | 'google') => {
     if (disabled || isLoading) return;
     
@@ -21,55 +30,78 @@ export default function OAuthButtons({ action, className = '', disabled = false 
     
     try {
       setIsLoading(true);
+      setLoadingProvider(provider);
       setError(null);
       
       // Stocker l'action pour le callback
       sessionStorage.setItem('oauth_action', action);
       sessionStorage.setItem('oauth_provider', provider);
+      sessionStorage.setItem('oauth_timestamp', Date.now().toString());
       
-      // Appel GraphQL vers votre mutation generateOAuthUrl
-      const graphqlUrl = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql';
+      console.log('📦 [OAUTH-BUTTONS] OAuth data stored in sessionStorage');
+
+      // ✅ CORRECTION 3: URL de redirection corrigée vers le frontend
+      const redirectUri = `${API_CONFIG.FRONTEND_URL}/oauth/callback`;
+      console.log('🔗 [OAUTH-BUTTONS] Using redirect URI:', redirectUri);
       
-      const response = await fetch(graphqlUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-App-ID': process.env.NEXT_PUBLIC_AUTH_APP_ID || '',
-          'X-App-Secret': process.env.NEXT_PUBLIC_AUTH_APP_SECRET || '',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          query: `
-            mutation GenerateOAuthUrl($input: OAuthAuthorizationInput!) {
-              generateOAuthUrl(input: $input) {
-                success
-                authUrl
-                state
-                provider
-                expiresAt
-                message
+      // ✅ CORRECTION 4: Appel GraphQL avec gestion d'erreur améliorée
+      const response = await Promise.race([
+        fetch(API_CONFIG.GRAPHQL_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-App-ID': API_CONFIG.AUTH_APP_ID,
+            'X-App-Secret': API_CONFIG.AUTH_APP_SECRET,
+            'X-Client-Name': 'auth-app-oauth',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            query: `
+              mutation GenerateOAuthUrl($input: OAuthAuthorizationInput!) {
+                generateOAuthUrl(input: $input) {
+                  success
+                  authUrl
+                  state
+                  provider
+                  expiresAt
+                  message
+                }
+              }
+            `,
+            variables: {
+              input: {
+                provider: provider,
+                redirectUri: redirectUri,
+                scopes: provider === 'github' 
+                  ? ['user:email', 'read:user'] 
+                  : ['openid', 'email', 'profile']
               }
             }
-          `,
-          variables: {
-            input: {
-              provider: provider,
-              redirectUri: `${window.location.origin}/oauth/callback`,
-              scopes: provider === 'github' 
-                ? ['user:email', 'read:user'] 
-                : ['openid', 'email', 'profile']
-            }
-          }
-        })
-      });
+          })
+        }),
+        // ✅ Timeout de 15 secondes
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Request timeout')), 15000)
+        )
+      ]);
+
+      console.log(`📨 [OAUTH-BUTTONS] GraphQL response status: ${response.status}`);
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [OAUTH-BUTTONS] HTTP Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const result = await response.json();
+      console.log('📦 [OAUTH-BUTTONS] GraphQL result:', result);
       
       if (result.errors) {
+        console.error('❌ [OAUTH-BUTTONS] GraphQL errors:', result.errors);
         throw new Error(result.errors[0].message);
       }
 
@@ -81,17 +113,43 @@ export default function OAuthButtons({ action, className = '', disabled = false 
         // Stocker le state retourné par le backend
         sessionStorage.setItem('oauth_state', oauthData.state);
         
-        // Redirection vers l'URL générée par votre backend
+        // ✅ CORRECTION 5: Redirection immédiate
         window.location.href = oauthData.authUrl;
       } else {
-        throw new Error(oauthData?.message || 'Failed to generate OAuth URL');
+        const errorMessage = oauthData?.message || 'Failed to generate OAuth URL';
+        console.error('❌ [OAUTH-BUTTONS] OAuth URL generation failed:', errorMessage);
+        throw new Error(errorMessage);
       }
       
     } catch (error: any) {
       console.error(`❌ [OAUTH-BUTTONS] OAuth ${provider} error:`, error);
-      setError(`Erreur OAuth ${provider}: ${error.message}`);
+      
+      // ✅ CORRECTION 6: Messages d'erreur détaillés
+      let userFriendlyMessage = `Erreur OAuth ${provider}`;
+      
+      if (error.message.includes('timeout')) {
+        userFriendlyMessage = 'Connexion trop lente. Vérifiez votre connexion internet et réessayez.';
+      } else if (error.message.includes('HTTP 5')) {
+        userFriendlyMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
+      } else if (error.message.includes('HTTP 4')) {
+        userFriendlyMessage = 'Erreur de configuration OAuth. Contactez le support si le problème persiste.';
+      } else if (error.message.includes('fetch')) {
+        userFriendlyMessage = 'Impossible de contacter le serveur. Vérifiez votre connexion.';
+      } else if (error.message) {
+        userFriendlyMessage = `${provider} OAuth: ${error.message}`;
+      }
+      
+      setError(userFriendlyMessage);
       setIsLoading(false);
+      setLoadingProvider(null);
     }
+  };
+
+  // ✅ CORRECTION 7: Retry function
+  const handleRetry = () => {
+    setError(null);
+    setIsLoading(false);
+    setLoadingProvider(null);
   };
 
   const getProviderIcon = (provider: string) => {
@@ -120,7 +178,7 @@ export default function OAuthButtons({ action, className = '', disabled = false 
     return action === 'login' ? 'Se connecter avec' : 'S\'inscrire avec';
   };
 
-  // Providers disponibles (simplifié)
+  // Providers disponibles
   const availableProviders = [
     { name: 'github', displayName: 'GitHub', enabled: true },
     { name: 'google', displayName: 'Google', enabled: true }
@@ -157,9 +215,10 @@ export default function OAuthButtons({ action, className = '', disabled = false 
               transition-all duration-200 ease-in-out
               ${provider.name === 'github' ? 'hover:text-gray-900' : ''}
               ${provider.name === 'google' ? 'hover:text-gray-900' : ''}
+              ${loadingProvider === provider.name ? 'bg-gray-50 border-gray-400' : ''}
             `}
           >
-            {isLoading ? (
+            {isLoading && loadingProvider === provider.name ? (
               <>
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -179,14 +238,23 @@ export default function OAuthButtons({ action, className = '', disabled = false 
         ))}
       </div>
 
-      {/* Message d'erreur */}
+      {/* Message d'erreur avec option de retry */}
       {error && (
         <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 text-red-500 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <div className="flex items-start space-x-3">
+            <svg className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
-            <p className="text-red-700 text-sm">{error}</p>
+            <div className="flex-1">
+              <p className="text-red-700 text-sm font-medium">Erreur OAuth</p>
+              <p className="text-red-600 text-sm mt-1">{error}</p>
+              <button
+                onClick={handleRetry}
+                className="mt-2 text-sm text-red-600 hover:text-red-800 underline focus:outline-none"
+              >
+                Réessayer
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -222,6 +290,25 @@ export default function OAuthButtons({ action, className = '', disabled = false 
           </span>
         </div>
       </div>
+
+      {/* Debug info en développement */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="text-left">
+            <h4 className="text-xs font-medium text-gray-900 mb-2">
+              🔧 Debug Info (Development)
+            </h4>
+            <div className="text-xs text-gray-600 space-y-1">
+              <p><strong>GraphQL URL:</strong> {API_CONFIG.GRAPHQL_URL}</p>
+              <p><strong>Frontend URL:</strong> {API_CONFIG.FRONTEND_URL}</p>
+              <p><strong>App ID:</strong> {API_CONFIG.AUTH_APP_ID}</p>
+              <p><strong>Action:</strong> {action}</p>
+              <p><strong>Loading:</strong> {isLoading ? 'Yes' : 'No'}</p>
+              <p><strong>Loading Provider:</strong> {loadingProvider || 'None'}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

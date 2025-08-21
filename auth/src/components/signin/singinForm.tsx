@@ -1,4 +1,4 @@
-// auth/src/components/signin/singinForm.tsx - AVEC OAUTH GITHUB
+// auth/src/components/signin/singinForm.tsx - VERSION SIMPLIFIÉE
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -8,8 +8,10 @@ import Link from "next/link";
 import { Button } from '@/src/components/landing-page/Button';
 import { useSearchParams } from "next/navigation";
 import { AUTH_CONFIG } from "@/src/config/auth.config";
-import { TransitionService } from "@/src/lib/TransitionService";
 import OAuthButtons from "@/src/components/oauth/OAuthButtons";
+import AuthPageHeader from "@/src/components/auth/AuthPageHeader";
+import AuthErrorDisplay from "@/src/components/auth/AuthErrorDisplay";
+import AuthLoadingDisplay from "@/src/components/auth/AuthLoadingDisplay";
 
 export default function SignInForm() {
   const { state, login, clearError, requestMagicLink } = useAuth();
@@ -20,7 +22,6 @@ export default function SignInForm() {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'password' | 'magic-link' | 'oauth'>('password');
   const [magicLinkEnabled, setMagicLinkEnabled] = useState(false);
-  const [magicLinkAction, setMagicLinkAction] = useState<'login' | 'register'>('login');
   const [isRedirecting, setIsRedirecting] = useState(false);
   
   const initialMessage = searchParams.get("message");
@@ -43,16 +44,16 @@ export default function SignInForm() {
     const errors: Record<string, string> = {};
 
     if (!username.trim()) {
-      errors.username = "Le nom d'utilisateur ou email est requis";
+      errors.username = "Email ou nom d'utilisateur requis";
     } else if (username.trim().length < 3) {
-      errors.username = "Le nom d'utilisateur doit contenir au moins 3 caractères";
+      errors.username = "Au moins 3 caractères requis";
     }
 
     if (activeTab === 'password') {
       if (!password.trim()) {
-        errors.password = "Le mot de passe est requis";
+        errors.password = "Mot de passe requis";
       } else if (password.length < 6) {
-        errors.password = "Le mot de passe doit contenir au moins 6 caractères";
+        errors.password = "Au moins 6 caractères requis";
       }
     }
 
@@ -60,9 +61,9 @@ export default function SignInForm() {
     return Object.keys(errors).length === 0;
   };
 
-  const redirectToDashboard = useCallback(async (returnUrl: string = '/account'): Promise<void> => {
+  const redirectToDashboard = useCallback(async (): Promise<void> => {
     try {
-      console.log('🚀 [SIGNIN] Préparation redirection vers Dashboard...');
+      console.log('🚀 [SIGNIN] Redirection vers Dashboard...');
       setIsRedirecting(true);
       
       if (!state.isAuthenticated || !state.user) {
@@ -73,16 +74,13 @@ export default function SignInForm() {
         throw new Error('Token d\'accès manquant');
       }
 
-      // Construire l'URL de redirection directe vers le Dashboard
       const dashboardUrl = new URL('/', AUTH_CONFIG.DASHBOARD_URL);
+      console.log('🚀 [SIGNIN] Redirection vers:', dashboardUrl.toString());
       
-      console.log('🚀 [SIGNIN] Redirection vers Dashboard:', dashboardUrl.toString());
-      
-      // Effectuer la redirection externe
       window.location.href = dashboardUrl.toString();
       
     } catch (error: any) {
-      console.error('❌ [SIGNIN] Erreur redirection Dashboard:', error);
+      console.error('❌ [SIGNIN] Erreur redirection:', error);
       setIsRedirecting(false);
       throw error;
     }
@@ -101,11 +99,11 @@ export default function SignInForm() {
       const result = await login({ username: username.trim(), password });
       
       if (result.success) {
-        console.log('✅ [SIGNIN] Connexion réussie, redirection...');
-        await redirectToDashboard('/account');
+        console.log('✅ [SIGNIN] Connexion réussie');
+        await redirectToDashboard();
       }
     } catch (error) {
-      console.error('❌ [SIGNIN] Erreur lors de la connexion:', error);
+      console.error('❌ [SIGNIN] Erreur connexion:', error);
       setIsRedirecting(false);
     }
   };
@@ -117,14 +115,13 @@ export default function SignInForm() {
     clearError();
 
     if (!username.trim()) {
-      setValidationErrors({ username: "L'email est requis pour Magic Link" });
+      setValidationErrors({ username: "Email requis pour Magic Link" });
       return;
     }
 
-    // Vérifier que c'est un email valide
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(username.trim())) {
-      setValidationErrors({ username: "Veuillez saisir une adresse email valide" });
+      setValidationErrors({ username: "Adresse email valide requise" });
       return;
     }
 
@@ -159,30 +156,23 @@ export default function SignInForm() {
   const currentError = state.error || magicLinkState.error;
   const magicLinkSuccess = magicLinkState.success;
 
-  // Si redirection en cours, afficher un écran de redirection
+  // Écran de redirection
   if (isRedirecting) {
     return (
-      <div className="max-w-sm mx-auto">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Connexion réussie !</h2>
-          <p className="text-gray-600 mb-4">Redirection vers le dashboard...</p>
-          {state.user && (
-            <p className="text-sm text-gray-500">
-              Bienvenue {state.user.username}
-            </p>
-          )}
-        </div>
-      </div>
+      <AuthLoadingDisplay
+        title="Connexion réussie !"
+        message="Redirection vers le dashboard..."
+        userInfo={state.user ? `Bienvenue ${state.user.username}` : undefined}
+      />
     );
   }
 
   return (
     <div className="max-w-sm mx-auto">
-      <div className="mb-10 text-center">
-        <h1 className="text-4xl font-bold">Connectez-vous à votre compte</h1>
-        <p className="text-gray-600 mt-2">Propulsé par SMP SDK</p>
-      </div>
+      <AuthPageHeader 
+        title="Connexion"
+        subtitle="Accédez à votre compte"
+      />
 
       {initialMessage && (
         <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
@@ -190,27 +180,9 @@ export default function SignInForm() {
         </div>
       )}
 
-      {/* Onglets - afficher OAuth, Magic Link et Password */}
+      {/* Onglets de connexion */}
       <div className="mb-6">
         <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50">
-          <button
-            type="button"
-            onClick={() => setActiveTab('password')}
-            className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors ${
-              activeTab === 'password'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <span className="flex items-center justify-center">
-              <svg className="mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-              Mot de passe
-            </span>
-          </button>
-          
-          {/* OAuth Tab */}
           <button
             type="button"
             onClick={() => setActiveTab('oauth')}
@@ -227,8 +199,24 @@ export default function SignInForm() {
               OAuth
             </span>
           </button>
+          
+          <button
+            type="button"
+            onClick={() => setActiveTab('password')}
+            className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors ${
+              activeTab === 'password'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <span className="flex items-center justify-center">
+              <svg className="mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              Mot de passe
+            </span>
+          </button>
 
-          {/* Magic Link Tab - uniquement si activé */}
           {magicLinkEnabled && (
             <button
               type="button"
@@ -250,35 +238,15 @@ export default function SignInForm() {
         </div>
       </div>
 
-      {/* Contenu des onglets */}
+      {/* Contenu selon l'onglet sélectionné */}
       {activeTab === 'oauth' ? (
-        <div>
-          <div className="text-center mb-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Connexion avec OAuth
-            </h3>
-            <p className="text-sm text-gray-600">
-              Connectez-vous rapidement avec votre compte GitHub ou Google
-            </p>
-          </div>
-          
-          <OAuthButtons action="login" disabled={isLoading} />
-
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Première fois ici ?{" "}
-              <Link href="/signup" className="text-blue-500 underline hover:no-underline">
-                Créer un compte
-              </Link>
-            </p>
-          </div>
-        </div>
+        <OAuthButtons action="login" disabled={isLoading} />
       ) : activeTab === 'password' ? (
         <form onSubmit={handlePasswordLogin}>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="username">
-                Nom d'utilisateur ou email
+                Email ou nom d'utilisateur
               </label>
               <input
                 id="username"
@@ -341,15 +309,15 @@ export default function SignInForm() {
             </Button>
           </div>
 
-          <div className="mt-6 text-center">
+          <div className="mt-4 text-center">
             <Link href="/forgot-password" className="text-sm text-gray-700 underline hover:no-underline">
               Mot de passe oublié ?
             </Link>
           </div>
         </form>
       ) : (
+        // Magic Link Tab
         <div>
-          {/* Contenu Magic Link existant */}
           {!magicLinkSuccess ? (
             <form onSubmit={handleMagicLinkRequest}>
               <div className="space-y-4">
@@ -373,27 +341,6 @@ export default function SignInForm() {
                   {validationErrors.username && (
                     <p className="text-red-500 text-sm mt-1">{validationErrors.username}</p>
                   )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="magic-action">
-                    Action souhaitée
-                  </label>
-                  <select
-                    id="magic-action"
-                    className="form-select w-full py-2"
-                    value={magicLinkAction}
-                    onChange={(e) => setMagicLinkAction(e.target.value as 'login' | 'register')}
-                    disabled={isLoading}
-                  >
-                    <option value="login">Connexion </option>
-                    <option value="register">Inscription </option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {magicLinkAction === 'login' 
-                      ? 'Se connecter avec un compte existant'
-                      : 'Créer un nouveau compte automatiquement'
-                    }
-                  </p>
                 </div>
               </div>
 
@@ -423,38 +370,26 @@ export default function SignInForm() {
               </div>
             </form>
           ) : (
-            // Contenu de succès Magic Link existant...
-            <div className="space-y-6">
-              <div className="text-center">
-                <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-                  <svg className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Magic Link envoyé !
-                </h3>
-                <p className="text-sm text-gray-600">
-                  {magicLinkSuccess}
-                </p>
+            <div className="text-center">
+              <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
+                <svg className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
               </div>
+              
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Magic Link envoyé !
+              </h3>
+              <p className="text-sm text-gray-600">
+                {magicLinkSuccess}
+              </p>
             </div>
           )}
         </div>
       )}
 
       {/* Affichage des erreurs */}
-      {currentError && (
-        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            <p className="text-red-700 text-sm">{currentError}</p>
-          </div>
-        </div>
-      )}
+      <AuthErrorDisplay error={currentError} />
       
       <div className="mt-8 text-center text-sm text-gray-700 border-t pt-6">
         Pas encore inscrit ?
@@ -462,17 +397,6 @@ export default function SignInForm() {
           Créer un compte
         </Link>
       </div>
-
-      {/* Informations SDK en mode développement */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <p className="text-xs text-gray-600 text-center">
-            🔧 Propulsé par SMP SDK v1.0.0
-            {magicLinkEnabled && ' | Magic Link activé'}
-            {' | OAuth GitHub/Google disponible'}
-          </p>
-        </div>
-      )}
     </div>
   );
 }

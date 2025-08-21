@@ -1,4 +1,4 @@
-// auth/src/components/signup/signupForm.tsx - AVEC OAUTH GITHUB
+// auth/src/components/signup/signupForm.tsx - VERSION PROGRESSIVE SIMPLIFIÉE
 "use client";
 
 import { useState, useEffect } from "react";
@@ -6,20 +6,16 @@ import Link from "next/link";
 import { Button } from "@/src/components/landing-page/Button";
 import { useSignup } from "@/context/signupContext";
 import { useEnhancedAuth } from "@/context/authenticationContext";
-import OAuthButtons from "@/src/components/oauth/OAuthButtons";
+import AuthPageHeader from "@/src/components/auth/AuthPageHeader";
+import AuthErrorDisplay from "@/src/components/auth/AuthErrorDisplay";
+import AuthSuccessDisplay from "@/src/components/auth/AuthSuccessDisplay";
+import AuthLoadingDisplay from "@/src/components/auth/AuthLoadingDisplay";
 
 interface PasswordCriteria {
   length: boolean;
   specialChar: boolean;
   uppercase: boolean;
   number: boolean;
-}
-
-interface UsernameCriteria {
-  length: boolean;
-  noSpaces: boolean;
-  lowercase: boolean;
-  notBanned: boolean;
 }
 
 interface FormData {
@@ -36,7 +32,7 @@ export default function SignUpForm() {
   const { signup, loading, error, success, clearError, clearSuccess } = useSignup();
   const { login, state: authState } = useEnhancedAuth();
   
-  const [step, setStep] = useState<number>(1);
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [formData, setFormData] = useState<FormData>({
     username: "",
     email: "",
@@ -52,7 +48,6 @@ export default function SignUpForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
-  const [activeMethod, setActiveMethod] = useState<'form' | 'oauth'>('form');
   
   const [passwordCriteria, setPasswordCriteria] = useState<PasswordCriteria>({
     length: false,
@@ -60,31 +55,21 @@ export default function SignUpForm() {
     uppercase: false,
     number: false,
   });
-  
-  const [usernameCriteria, setUsernameCriteria] = useState<UsernameCriteria>({
-    length: false,
-    noSpaces: true,
-    lowercase: true,
-    notBanned: true,
-  });
 
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const bannedUsernames = ["admin", "root", "test", "null", "undefined"];
 
   // Nettoyer les erreurs lors des changements
   useEffect(() => {
-    if (error) {
-      clearError();
-    }
-    if (success) {
-      clearSuccess();
-    }
+    if (error) clearError();
+    if (success) clearSuccess();
   }, [formData, clearError, clearSuccess]);
 
   // Gestion de la redirection après connexion automatique
   useEffect(() => {
     if (authState.isAuthenticated && authState.user && registrationSuccess) {
-      console.log('✅ [AUTH-SIGNUP] Inscription et connexion réussies, redirection vers dashboard...');
+      console.log('✅ [SIGNUP] Inscription et connexion réussies, redirection vers dashboard...');
       
       setRedirectCountdown(3);
       
@@ -103,22 +88,44 @@ export default function SignUpForm() {
     }
   }, [authState.isAuthenticated, authState.user, registrationSuccess]);
 
+  const validateField = (field: keyof FormData, value: string): string | null => {
+    switch (field) {
+      case 'username':
+        if (value.length < 3) return 'Au moins 3 caractères requis';
+        if (/\s/.test(value)) return 'Pas d\'espaces autorisés';
+        if (bannedUsernames.includes(value.toLowerCase())) return 'Nom d\'utilisateur réservé';
+        return null;
+        
+      case 'email':
+        if (!emailRegex.test(value)) return 'Format d\'email invalide';
+        return null;
+        
+      case 'confirmEmail':
+        if (value !== formData.email) return 'Les emails ne correspondent pas';
+        return null;
+        
+      case 'password':
+        if (value.length < 8) return 'Au moins 8 caractères requis';
+        if (!/[A-Z]/.test(value)) return 'Au moins une majuscule';
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(value)) return 'Au moins un caractère spécial';
+        if (!/[0-9]/.test(value)) return 'Au moins un chiffre';
+        return null;
+        
+      case 'confirmPassword':
+        if (value !== formData.password) return 'Les mots de passe ne correspondent pas';
+        return null;
+        
+      default:
+        return null;
+    }
+  };
+
   const handleInputChange = (field: keyof FormData, value: string) => {
     let processedValue = value;
 
     if (field === "username") {
-      // Convertir en minuscules et supprimer les espaces
       processedValue = value.toLowerCase().replace(/\s+/g, '');
-      
-      // Mise à jour des critères du nom d'utilisateur
-      setUsernameCriteria({
-        length: processedValue.length >= 4,
-        noSpaces: !processedValue.includes(' '),
-        lowercase: processedValue === processedValue.toLowerCase(),
-        notBanned: !bannedUsernames.includes(processedValue.toLowerCase()),
-      });
     }
-
     if (field === "email" || field === "confirmEmail") {
       processedValue = value.toLowerCase().trim();
     }
@@ -128,6 +135,14 @@ export default function SignUpForm() {
       [field]: processedValue,
     }));
 
+    // Validation en temps réel
+    const validationError = validateField(field, processedValue);
+    setValidationErrors(prev => ({
+      ...prev,
+      [field]: validationError || ''
+    }));
+
+    // Mise à jour des critères de mot de passe
     if (field === "password") {
       setPasswordCriteria({
         length: value.length >= 8,
@@ -138,84 +153,51 @@ export default function SignUpForm() {
     }
 
     // Progression automatique des étapes
-    if (processedValue.trim()) {
-      const fieldToStepMap: Record<keyof FormData, number> = {
-        username: 1,
-        email: 2,
-        confirmEmail: 3,
-        password: 4,
-        confirmPassword: 5,
-        firstName: 6,
-        lastName: 6,
-      };
-      
-      const nextStep = fieldToStepMap[field] + 1;
-      setStep((prev) => Math.max(prev, nextStep));
+    if (processedValue.trim() && !validationError) {
+      if (field === 'username' && currentStep === 1) {
+        setCurrentStep(2);
+      } else if (field === 'email' && currentStep === 2) {
+        setCurrentStep(3);
+      } else if (field === 'confirmEmail' && currentStep === 3 && processedValue === formData.email) {
+        setCurrentStep(4);
+      } else if (field === 'password' && currentStep === 4 && !validateField('password', processedValue)) {
+        setCurrentStep(5);
+      } else if (field === 'confirmPassword' && currentStep === 5 && processedValue === formData.password) {
+        setCurrentStep(6);
+      }
     }
   };
 
-  const validateFields = (): boolean => {
-    const username = formData.username.trim().toLowerCase();
-
-    if (!formData.username.trim() || formData.username.length < 4) {
-      console.error("Validation error: Username too short");
-      return false;
-    }
-
-    if (formData.username.includes(' ')) {
-      console.error("Validation error: Username has spaces");
-      return false;
-    }
-
-    if (bannedUsernames.includes(username)) {
-      console.error("Validation error: Username is banned");
-      return false;
-    }
-
-    if (!formData.email.trim() || !emailRegex.test(formData.email)) {
-      console.error("Validation error: Invalid email");
-      return false;
-    }
-
-    if (formData.email !== formData.confirmEmail) {
-      console.error("Validation error: Emails don't match");
-      return false;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      console.error("Validation error: Passwords don't match");
-      return false;
-    }
-
-    if (!passwordCriteria.length || !passwordCriteria.specialChar || !passwordCriteria.uppercase || !passwordCriteria.number) {
-      console.error("Validation error: Password criteria not met");
-      return false;
-    }
+  const validateAllFields = (): boolean => {
+    const errors: Record<string, string> = {};
+    
+    Object.keys(formData).forEach(key => {
+      const field = key as keyof FormData;
+      const value = formData[field] || '';
+      const error = validateField(field, value);
+      if (error) errors[field] = error;
+    });
 
     if (!acceptTerms) {
-      console.error("Validation error: Terms not accepted");
-      return false;
+      errors.terms = 'Vous devez accepter les conditions d\'utilisation';
     }
 
-    return true;
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    console.log('🔍 [DEBUG] Form data before validation:', formData);
-    
-    if (!validateFields()) {
-      console.log('❌ [DEBUG] Client validation failed');
+    if (!validateAllFields()) {
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      console.log('🔄 [AUTH-SIGNUP] Tentative d\'inscription...');
+      console.log('🔄 [SIGNUP] Tentative d\'inscription...');
       
-      // Préparer les données normalisées
       const signupData = {
         username: formData.username,
         email: formData.email,
@@ -226,39 +208,30 @@ export default function SignUpForm() {
         emailVerified: false,
       };
 
-      console.log('🔍 [DEBUG] Data being sent:', {
-        username: signupData.username,
-        email: signupData.email,
-        hasFirstName: !!signupData.firstName,
-        hasLastName: !!signupData.lastName
-      });
-      
-      // Étape 1: Inscription
       const signupResult = await signup(signupData);
 
       if (signupResult.success) {
-        console.log('✅ [AUTH-SIGNUP] Inscription réussie, connexion automatique...');
+        console.log('✅ [SIGNUP] Inscription réussie, connexion automatique...');
         setRegistrationSuccess(true);
         
-        // Étape 2: Connexion automatique après inscription
         const loginResult = await login({
           username: formData.username,
           password: formData.password,
         });
 
         if (loginResult.success) {
-          console.log('✅ [AUTH-SIGNUP] Connexion automatique réussie');
+          console.log('✅ [SIGNUP] Connexion automatique réussie');
         } else {
-          console.warn('⚠️ [AUTH-SIGNUP] Échec connexion automatique, redirection manuelle');
+          console.warn('⚠️ [SIGNUP] Échec connexion automatique');
           setRedirectCountdown(null);
           setRegistrationSuccess(false);
         }
       } else {
-        console.error('❌ [AUTH-SIGNUP] Échec de l\'inscription');
+        console.error('❌ [SIGNUP] Échec de l\'inscription');
         setRegistrationSuccess(false);
       }
     } catch (error: any) {
-      console.error('❌ [AUTH-SIGNUP] Erreur d\'inscription:', error);
+      console.error('❌ [SIGNUP] Erreur d\'inscription:', error);
       setRegistrationSuccess(false);
     } finally {
       setIsSubmitting(false);
@@ -268,262 +241,135 @@ export default function SignUpForm() {
   // Affichage du succès avec redirection
   if (registrationSuccess && authState.isAuthenticated && redirectCountdown !== null) {
     return (
-      <div className="text-center">
-        <div className="mb-6">
-          <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-            <svg className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            Inscription réussie !
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Bienvenue {formData.firstName} {formData.lastName} ({formData.username})
-          </p>
-          
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-md mb-4">
-            <div className="flex items-center justify-center space-x-2 text-blue-600 mb-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-              <span className="text-sm font-medium">
-                Redirection vers le dashboard...
-              </span>
-            </div>
-            <p className="text-xs text-blue-700">
-              Redirection automatique dans {redirectCountdown} seconde{redirectCountdown !== 1 ? 's' : ''}
-            </p>
-          </div>
-
-          <button
-            onClick={() => {
-              window.location.href = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002/account';
-            }}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-          >
-            Accéder maintenant au dashboard
-          </button>
-        </div>
-      </div>
+      <AuthSuccessDisplay
+        title="Inscription réussie !"
+        message={`Bienvenue ${formData.firstName} ${formData.lastName}`}
+        actionText="Accéder maintenant au dashboard"
+        actionOnClick={() => {
+          window.location.href = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3002/account';
+        }}
+        countdown={redirectCountdown}
+      />
     );
   }
 
-  // Affichage du succès d'inscription sans connexion automatique
+  // Affichage du succès sans connexion automatique
   if (success && !authState.isAuthenticated) {
     return (
-      <div className="text-center">
-        <div className="mb-6">
-          <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
-            <svg className="h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            Inscription réussie !
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Votre compte a été créé avec succès. Vous pouvez maintenant vous connecter.
-          </p>
-          
-          <div className="space-y-3">
-            <Link
-              href="/signin"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-            >
-              Se connecter maintenant
-            </Link>
-          </div>
-        </div>
-      </div>
+      <AuthSuccessDisplay
+        title="Inscription réussie !"
+        message="Votre compte a été créé avec succès."
+        actionText="Se connecter maintenant"
+        actionHref="/signin"
+      />
     );
   }
 
   return (
-    <div>
-      <div className="mb-10">
-        <h1 className="text-4xl font-bold">Créez votre compte</h1>
-        <p className="text-gray-600 mt-2">
-          {activeMethod === 'form' 
-            ? `Étape ${Math.min(step, 6)} sur 6` 
-            : 'Inscription rapide avec OAuth'
-          }
-        </p>
-      </div>
+    <div className="max-w-sm mx-auto">
+      <AuthPageHeader 
+        title="Créez votre compte"
+        subtitle={`Étape ${currentStep} sur 6`}
+      />
 
-      {/* Sélecteur de méthode d'inscription */}
-      <div className="mb-6">
-        <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50">
-          <button
-            type="button"
-            onClick={() => setActiveMethod('oauth')}
-            className={`flex-1 py-3 px-4 text-sm font-medium rounded-md transition-colors ${
-              activeMethod === 'oauth'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <div className="flex items-center justify-center flex-col space-y-1">
-              <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-              </svg>
-              <span>OAuth</span>
-            </div>
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setActiveMethod('form')}
-            className={`flex-1 py-3 px-4 text-sm font-medium rounded-md transition-colors ${
-              activeMethod === 'form'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <div className="flex items-center justify-center flex-col space-y-1">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span>Formulaire</span>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      {/* Contenu selon la méthode sélectionnée */}
-      {activeMethod === 'oauth' ? (
-        <div>
-          <div className="text-center mb-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Inscription rapide avec OAuth
-            </h3>
-            <p className="text-sm text-gray-600">
-              Créez votre compte instantanément avec GitHub ou Google
-            </p>
-          </div>
-
-          <OAuthButtons action="register" disabled={loading || isSubmitting} />
-
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <div className="flex items-start space-x-3">
-              <svg className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div className="text-left">
-                <p className="text-sm font-medium text-blue-900">
-                  Inscription automatique
-                </p>
-                <p className="text-xs text-blue-700 mt-1">
-                  Votre compte sera créé automatiquement avec les informations de votre profil GitHub/Google.
-                  Aucun mot de passe n'est nécessaire.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              Déjà inscrit ?{" "}
-              <Link href="/signin" className="text-blue-500 underline hover:no-underline">
-                Se connecter
-              </Link>
-            </p>
-          </div>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit}>
+        <div className="space-y-4">
+          {/* Étape 1: Nom d'utilisateur */}
           <div className="space-y-4">
-            {/* Étape 1: Nom d'utilisateur */}
-            {step >= 1 && (
-              <div>
-                <label htmlFor="username" className="mb-1 block text-sm font-medium text-gray-700">
-                  Nom d'utilisateur *
-                  <span className="text-xs text-gray-500 ml-2">
-                    (converti automatiquement en minuscules)
-                  </span>
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  className="form-input w-full py-2 lowercase"
-                  placeholder="votre-nom-utilisateur"
-                  value={formData.username}
-                  onChange={(e) => handleInputChange("username", e.target.value)}
-                  required
-                  disabled={loading || isSubmitting}
-                />
-                <div className="mt-2 text-xs text-gray-500 space-y-1">
-                  <div className={usernameCriteria.length ? "text-green-600" : "text-gray-500"}>
-                    ✓ Au moins 4 caractères
-                  </div>
-                  <div className={usernameCriteria.noSpaces ? "text-green-600" : "text-gray-500"}>
-                    ✓ Pas d'espaces
-                  </div>
-                  <div className={usernameCriteria.notBanned ? "text-green-600" : "text-red-600"}>
-                    ✓ Nom d'utilisateur disponible
-                  </div>
+            <div>
+              <label htmlFor="username" className="mb-1 block text-sm font-medium text-gray-700">
+                Nom d'utilisateur
+              </label>
+              <input
+                id="username"
+                type="text"
+                className={`form-input w-full py-2 ${validationErrors.username ? 'border-red-300' : ''}`}
+                placeholder="votre-nom-utilisateur"
+                value={formData.username}
+                onChange={(e) => handleInputChange("username", e.target.value)}
+                required
+                disabled={loading || isSubmitting}
+              />
+              {validationErrors.username && (
+                <p className="text-red-500 text-sm mt-1">{validationErrors.username}</p>
+              )}
+              <div className="mt-2 text-xs text-gray-500 space-y-1">
+                <div className={formData.username.length >= 3 ? "text-green-600" : "text-gray-500"}>
+                  ✓ Au moins 3 caractères
+                </div>
+                <div className={!formData.username.includes(' ') ? "text-green-600" : "text-gray-500"}>
+                  ✓ Pas d'espaces
+                </div>
+                <div className={!bannedUsernames.includes(formData.username.toLowerCase()) ? "text-green-600" : "text-red-600"}>
+                  ✓ Nom d'utilisateur disponible
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Étape 2: Email */}
-            {step >= 2 && (
+            {currentStep >= 2 && (
               <div>
                 <label htmlFor="email" className="mb-1 block text-sm font-medium text-gray-700">
-                  Adresse email *
+                  Adresse email
                 </label>
                 <input
                   id="email"
                   type="email"
-                  className="form-input w-full py-2"
+                  className={`form-input w-full py-2 ${validationErrors.email ? 'border-red-300' : ''}`}
                   placeholder="votre@email.com"
                   value={formData.email}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                   required
                   disabled={loading || isSubmitting}
                 />
+                {validationErrors.email && (
+                  <p className="text-red-500 text-sm mt-1">{validationErrors.email}</p>
+                )}
               </div>
             )}
 
             {/* Étape 3: Confirmation email */}
-            {step >= 3 && (
+            {currentStep >= 3 && (
               <div>
                 <label htmlFor="confirmEmail" className="mb-1 block text-sm font-medium text-gray-700">
-                  Confirmer l'email *
+                  Confirmer l'email
                 </label>
                 <input
                   id="confirmEmail"
                   type="email"
-                  className="form-input w-full py-2"
+                  className={`form-input w-full py-2 ${validationErrors.confirmEmail ? 'border-red-300' : ''}`}
                   placeholder="Confirmez votre email"
                   value={formData.confirmEmail}
                   onChange={(e) => handleInputChange("confirmEmail", e.target.value)}
                   required
                   disabled={loading || isSubmitting}
                 />
-                {formData.email && formData.confirmEmail && formData.email !== formData.confirmEmail && (
-                  <p className="mt-1 text-sm text-red-600">Les emails ne correspondent pas</p>
+                {validationErrors.confirmEmail && (
+                  <p className="text-red-500 text-sm mt-1">{validationErrors.confirmEmail}</p>
                 )}
               </div>
             )}
 
             {/* Étape 4: Mot de passe */}
-            {step >= 4 && (
+            {currentStep >= 4 && (
               <div>
                 <label htmlFor="password" className="mb-1 block text-sm font-medium text-gray-700">
-                  Mot de passe *
+                  Mot de passe
                 </label>
                 <input
                   id="password"
                   type="password"
                   autoComplete="new-password"
-                  className="form-input w-full py-2"
+                  className={`form-input w-full py-2 ${validationErrors.password ? 'border-red-300' : ''}`}
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={(e) => handleInputChange("password", e.target.value)}
                   required
                   disabled={loading || isSubmitting}
                 />
+                {validationErrors.password && (
+                  <p className="text-red-500 text-sm mt-1">{validationErrors.password}</p>
+                )}
                 <div className="mt-2 text-xs space-y-1">
                   <div className={passwordCriteria.length ? "text-green-600" : "text-gray-500"}>
                     ✓ Au moins 8 caractères
@@ -542,68 +388,66 @@ export default function SignUpForm() {
             )}
 
             {/* Étape 5: Confirmation mot de passe */}
-            {step >= 5 && (
+            {currentStep >= 5 && (
               <div>
                 <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-gray-700">
-                  Confirmer le mot de passe *
+                  Confirmer le mot de passe
                 </label>
                 <input
                   id="confirmPassword"
                   type="password"
                   autoComplete="new-password"
-                  className="form-input w-full py-2"
+                  className={`form-input w-full py-2 ${validationErrors.confirmPassword ? 'border-red-300' : ''}`}
                   placeholder="Confirmez votre mot de passe"
                   value={formData.confirmPassword}
                   onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
                   required
                   disabled={loading || isSubmitting}
                 />
-                {formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                  <p className="mt-1 text-sm text-red-600">Les mots de passe ne correspondent pas</p>
+                {validationErrors.confirmPassword && (
+                  <p className="text-red-500 text-sm mt-1">{validationErrors.confirmPassword}</p>
                 )}
               </div>
             )}
 
             {/* Étape 6: Informations optionnelles */}
-            {step >= 6 && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="firstName" className="mb-1 block text-sm font-medium text-gray-700">
-                    Prénom
-                  </label>
-                  <input
-                    id="firstName"
-                    type="text"
-                    className="form-input w-full py-2"
-                    placeholder="Votre prénom"
-                    value={formData.firstName}
-                    onChange={(e) => handleInputChange("firstName", e.target.value)}
-                    disabled={loading || isSubmitting}
-                  />
+            {currentStep >= 6 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="firstName" className="mb-1 block text-sm font-medium text-gray-700">
+                      Prénom
+                    </label>
+                    <input
+                      id="firstName"
+                      type="text"
+                      className="form-input w-full py-2"
+                      placeholder="Votre prénom"
+                      value={formData.firstName}
+                      onChange={(e) => handleInputChange("firstName", e.target.value)}
+                      disabled={loading || isSubmitting}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="lastName" className="mb-1 block text-sm font-medium text-gray-700">
+                      Nom
+                    </label>
+                    <input
+                      id="lastName"
+                      type="text"
+                      className="form-input w-full py-2"
+                      placeholder="Votre nom"
+                      value={formData.lastName}
+                      onChange={(e) => handleInputChange("lastName", e.target.value)}
+                      disabled={loading || isSubmitting}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="lastName" className="mb-1 block text-sm font-medium text-gray-700">
-                    Nom
-                  </label>
-                  <input
-                    id="lastName"
-                    type="text"
-                    className="form-input w-full py-2"
-                    placeholder="Votre nom"
-                    value={formData.lastName}
-                    onChange={(e) => handleInputChange("lastName", e.target.value)}
-                    disabled={loading || isSubmitting}
-                  />
-                </div>
-              </div>
-            )}
 
-            {/* Conditions et newsletter */}
-            {step >= 6 && (
-              <>
+                {/* Conditions et newsletter */}
                 <div className="flex items-center justify-between mt-4">
                   <label htmlFor="acceptTerms" className="text-sm text-gray-700">
-                    J'accepte les <Link href="/terms" className="text-blue-500 hover:underline">conditions d'utilisation</Link> *
+                    J'accepte les <Link href="/terms" className="text-blue-500 hover:underline">conditions d'utilisation</Link>
                   </label>
                   <div
                     className={`relative w-12 h-6 ${acceptTerms ? "bg-green-500" : "bg-gray-300"} rounded-full cursor-pointer`}
@@ -614,8 +458,11 @@ export default function SignUpForm() {
                     ></div>
                   </div>
                 </div>
+                {validationErrors.terms && (
+                  <p className="text-red-500 text-sm">{validationErrors.terms}</p>
+                )}
 
-                <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center justify-between">
                   <label htmlFor="acceptNewsletter" className="text-sm text-gray-700">
                     S'inscrire à la newsletter
                   </label>
@@ -628,22 +475,13 @@ export default function SignUpForm() {
                     ></div>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
-          {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-                <p className="text-red-700 text-sm">{error}</p>
-              </div>
-            </div>
-          )}
+          <AuthErrorDisplay error={error} />
 
-          {step >= 6 && (
+          {currentStep >= 6 && (
             <div className="mt-6">
               <Button
                 type="submit"
@@ -656,7 +494,7 @@ export default function SignUpForm() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Inscription en cours...
+                    Création du compte...
                   </span>
                 ) : (
                   "Créer mon compte"
@@ -664,8 +502,8 @@ export default function SignUpForm() {
               </Button>
             </div>
           )}
-        </form>
-      )}
+        </div>
+      </form>
 
       <div className="mt-6 text-center">
         Déjà inscrit ?{" "}
@@ -673,15 +511,6 @@ export default function SignUpForm() {
           Se connecter
         </Link>
       </div>
-
-      {/* Informations SDK en mode développement */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <p className="text-xs text-gray-600 text-center">
-            🔧 Propulsé par SMP SDK v1.0.0 | OAuth GitHub/Google disponible
-          </p>
-        </div>
-      )}
     </div>
   );
 }
